@@ -22,6 +22,9 @@ anyhow = "1"
 dashmap = "6"
 humantime-serde = "1"
 async-trait = "0.1"
-reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 tokio-util = "0.7"
 bytes = "1"
+futures = "0.3"
+
+[dev-dependencies]

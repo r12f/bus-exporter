@@ -1,7 +1,8 @@
 #![allow(dead_code)]
+pub mod collector;
 mod config;
 mod decoder;
-mod export;
+pub mod export;
 mod logging;
 pub mod metrics;
 mod modbus;

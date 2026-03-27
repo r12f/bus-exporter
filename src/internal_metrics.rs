@@ -88,9 +88,7 @@ impl InternalMetrics {
         &self,
         name: &str,
     ) -> dashmap::mapref::one::Ref<'_, String, CollectorStats> {
-        self.collector_stats
-            .entry(name.to_string())
-            .or_default();
+        self.collector_stats.entry(name.to_string()).or_default();
         self.collector_stats.get(name).unwrap()
     }
 

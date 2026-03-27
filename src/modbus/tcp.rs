@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use tokio_modbus::client::{tcp, Context as ModbusContext, Reader};
@@ -11,14 +9,14 @@ use super::{
 
 /// Modbus TCP client.
 pub struct TcpClient {
-    endpoint: SocketAddr,
+    endpoint: String,
     slave_id: u8,
     context: Option<ModbusContext>,
 }
 
 impl TcpClient {
     /// Create a new TCP client (does not connect yet).
-    pub fn new(endpoint: SocketAddr, slave_id: u8) -> Self {
+    pub fn new(endpoint: String, slave_id: u8) -> Self {
         Self {
             endpoint,
             slave_id,
@@ -43,7 +41,12 @@ impl ModbusConnection for TcpClient {
         if self.context.is_some() {
             self.disconnect().await.ok();
         }
-        let ctx = tcp::connect_slave(self.endpoint, Slave(self.slave_id))
+        let socket_addr = tokio::net::lookup_host(&self.endpoint)
+            .await
+            .with_context(|| format!("failed to resolve endpoint '{}'", self.endpoint))?
+            .next()
+            .with_context(|| format!("no addresses found for endpoint '{}'", self.endpoint))?;
+        let ctx = tcp::connect_slave(socket_addr, Slave(self.slave_id))
             .await
             .with_context(|| {
                 format!(

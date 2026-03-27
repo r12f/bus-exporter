@@ -8,7 +8,6 @@ mod metrics;
 mod modbus;
 
 use std::collections::BTreeMap;
-use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -29,10 +28,7 @@ impl ModbusClientFactory for RealModbusClientFactory {
     fn create(&self, collector: &config::Collector) -> Box<dyn modbus::ModbusClient> {
         match &collector.protocol {
             Protocol::Tcp { endpoint } => {
-                let addr: SocketAddr = endpoint
-                    .parse()
-                    .expect("invalid TCP endpoint should have been caught by config validation");
-                Box::new(TcpClient::new(addr, collector.slave_id))
+                Box::new(TcpClient::new(endpoint.clone(), collector.slave_id))
             }
             Protocol::Rtu {
                 device,

@@ -25,15 +25,47 @@ pub struct Config {
     pub collectors: Vec<Collector>,
 }
 
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogOutput {
+    Stdout,
+    Stderr,
+    Syslog,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SyslogFacility {
+    Daemon,
+    Local0,
+    Local1,
+    Local2,
+    Local3,
+    Local4,
+    Local5,
+    Local6,
+    Local7,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Logging {
     #[serde(default = "default_log_level")]
-    pub level: String,
+    pub level: LogLevel,
     #[serde(default = "default_log_output")]
-    pub output: String,
+    pub output: LogOutput,
     #[serde(default = "default_syslog_facility")]
-    pub syslog_facility: String,
+    pub syslog_facility: SyslogFacility,
 }
 
 impl Default for Logging {
@@ -46,14 +78,14 @@ impl Default for Logging {
     }
 }
 
-fn default_log_level() -> String {
-    "info".to_string()
+fn default_log_level() -> LogLevel {
+    LogLevel::Info
 }
-fn default_log_output() -> String {
-    "syslog".to_string()
+fn default_log_output() -> LogOutput {
+    LogOutput::Syslog
 }
-fn default_syslog_facility() -> String {
-    "daemon".to_string()
+fn default_syslog_facility() -> SyslogFacility {
+    SyslogFacility::Daemon
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -213,6 +245,17 @@ pub enum DataType {
     Bool,
 }
 
+impl DataType {
+    /// Returns the number of 16-bit Modbus registers this data type occupies.
+    pub fn register_count(self) -> u16 {
+        match self {
+            DataType::U16 | DataType::I16 | DataType::Bool => 1,
+            DataType::U32 | DataType::I32 | DataType::F32 => 2,
+            DataType::U64 | DataType::I64 | DataType::F64 => 4,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[allow(clippy::enum_variant_names)]
@@ -263,6 +306,36 @@ impl Config {
                     c.slave_id
                 );
             }
+            // Validate polling_interval minimum (100ms)
+            if c.polling_interval.as_millis() < 100 {
+                bail!(
+                    "collector '{}': polling_interval must be at least 100ms, got {:?}",
+                    c.name,
+                    c.polling_interval
+                );
+            }
+            // Validate RTU data_bits and stop_bits ranges
+            if let Protocol::Rtu {
+                data_bits,
+                stop_bits,
+                ..
+            } = &c.protocol
+            {
+                if !(5..=8).contains(data_bits) {
+                    bail!(
+                        "collector '{}': data_bits must be 5-8, got {}",
+                        c.name,
+                        data_bits
+                    );
+                }
+                if !(1..=2).contains(stop_bits) {
+                    bail!(
+                        "collector '{}': stop_bits must be 1-2, got {}",
+                        c.name,
+                        stop_bits
+                    );
+                }
+            }
             if c.metrics.is_empty() {
                 bail!("collector '{}': at least one metric required", c.name);
             }
@@ -289,6 +362,52 @@ impl Config {
                         "collector '{}', metric '{}': bool data_type must use coil or discrete register",
                         c.name,
                         m.name
+                    );
+                }
+                // Validate scale != 0.0
+                if m.scale == 0.0 {
+                    bail!(
+                        "collector '{}', metric '{}': scale must not be 0.0",
+                        c.name,
+                        m.name
+                    );
+                }
+                // Validate counter not used on coil/discrete (must be gauge only)
+                if m.metric_type == MetricType::Counter
+                    && (m.register_type == RegisterType::Coil
+                        || m.register_type == RegisterType::Discrete)
+                {
+                    bail!(
+                        "collector '{}', metric '{}': coil/discrete registers only support gauge metric type",
+                        c.name,
+                        m.name
+                    );
+                }
+                // Validate counter + bool is nonsensical
+                if m.metric_type == MetricType::Counter && m.data_type == DataType::Bool {
+                    bail!(
+                        "collector '{}', metric '{}': counter metric type cannot be used with bool data_type",
+                        c.name,
+                        m.name
+                    );
+                }
+                // Validate multi-register address overflow
+                let reg_count = m.data_type.register_count();
+                if m.address as u32 + reg_count as u32 > 65536 {
+                    bail!(
+                        "collector '{}', metric '{}': address {} + {} registers exceeds 65535",
+                        c.name,
+                        m.name,
+                        m.address,
+                        reg_count
+                    );
+                }
+                // Warn if byte_order is set to non-default for single-register types
+                // (byte_order is meaningless for u16/i16/bool which occupy only 1 register)
+                if m.data_type.register_count() == 1 && m.byte_order != ByteOrder::BigEndian {
+                    eprintln!(
+                        "warning: collector '{}', metric '{}': byte_order has no effect for single-register type {:?}",
+                        c.name, m.name, m.data_type
                     );
                 }
             }

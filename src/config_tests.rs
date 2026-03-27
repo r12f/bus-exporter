@@ -95,7 +95,9 @@ collectors:
 "#;
     let c = parse(yaml).unwrap();
     assert_eq!(c.global_labels.get("env").unwrap(), "prod");
-    assert_eq!(c.logging.level, "debug");
+    assert_eq!(c.logging.level, LogLevel::Debug);
+    assert_eq!(c.logging.output, LogOutput::Stdout);
+    assert_eq!(c.logging.syslog_facility, SyslogFacility::Local0);
     assert_eq!(c.collectors.len(), 2);
     match &c.collectors[1].protocol {
         Protocol::Rtu { bps, parity, .. } => {
@@ -254,8 +256,9 @@ collectors:
 #[test]
 fn test_defaults() {
     let c = parse(&minimal_yaml()).unwrap();
-    assert_eq!(c.logging.level, "info");
-    assert_eq!(c.logging.output, "syslog");
+    assert_eq!(c.logging.level, LogLevel::Info);
+    assert_eq!(c.logging.output, LogOutput::Syslog);
+    assert_eq!(c.logging.syslog_facility, SyslogFacility::Daemon);
     let p = c.exporters.prometheus.as_ref().unwrap();
     assert_eq!(p.listen, "0.0.0.0:9090");
     assert_eq!(p.path, "/metrics");
@@ -332,4 +335,311 @@ collectors:
         );
         parse(&y).unwrap_or_else(|e| panic!("{bo}: {e}"));
     }
+}
+
+// ===== New tests for review comment fixes =====
+
+#[test]
+fn test_invalid_log_level() {
+    let y = minimal_yaml().replace("", ""); // Use raw yaml with invalid level
+    let y = r#"
+logging:
+  level: banana
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    metrics:
+      - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
+"#;
+    assert!(parse(y).is_err(), "invalid log level should fail to parse");
+}
+
+#[test]
+fn test_invalid_log_output() {
+    let y = r#"
+logging:
+  output: file
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    metrics:
+      - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
+"#;
+    assert!(parse(y).is_err(), "invalid log output should fail to parse");
+}
+
+#[test]
+fn test_invalid_syslog_facility() {
+    let y = r#"
+logging:
+  syslog_facility: kern
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    metrics:
+      - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
+"#;
+    assert!(
+        parse(y).is_err(),
+        "invalid syslog facility should fail to parse"
+    );
+}
+
+#[test]
+fn test_all_log_levels() {
+    for level in ["trace", "debug", "info", "warn", "error"] {
+        let y = format!(
+            r#"
+logging:
+  level: {level}
+exporters:
+  prometheus: {{ enabled: true }}
+collectors:
+  - name: t
+    protocol: {{ type: tcp, endpoint: "a:502" }}
+    slave_id: 1
+    metrics:
+      - {{ name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }}
+"#
+        );
+        parse(&y).unwrap_or_else(|e| panic!("level {level}: {e}"));
+    }
+}
+
+#[test]
+fn test_all_syslog_facilities() {
+    for fac in [
+        "daemon", "local0", "local1", "local2", "local3", "local4", "local5", "local6", "local7",
+    ] {
+        let y = format!(
+            r#"
+logging:
+  syslog_facility: {fac}
+exporters:
+  prometheus: {{ enabled: true }}
+collectors:
+  - name: t
+    protocol: {{ type: tcp, endpoint: "a:502" }}
+    slave_id: 1
+    metrics:
+      - {{ name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }}
+"#
+        );
+        parse(&y).unwrap_or_else(|e| panic!("facility {fac}: {e}"));
+    }
+}
+
+#[test]
+fn test_rtu_data_bits_out_of_range() {
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: rtu, device: "/dev/ttyUSB0", data_bits: 4 }
+    slave_id: 1
+    metrics:
+      - { name: c, type: gauge, register_type: coil, address: 0, data_type: bool }
+"#;
+    assert!(parse(y)
+        .unwrap_err()
+        .to_string()
+        .contains("data_bits must be 5-8"));
+}
+
+#[test]
+fn test_rtu_stop_bits_out_of_range() {
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: rtu, device: "/dev/ttyUSB0", stop_bits: 3 }
+    slave_id: 1
+    metrics:
+      - { name: c, type: gauge, register_type: coil, address: 0, data_type: bool }
+"#;
+    assert!(parse(y)
+        .unwrap_err()
+        .to_string()
+        .contains("stop_bits must be 1-2"));
+}
+
+#[test]
+fn test_scale_zero_rejected() {
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    metrics:
+      - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16, scale: 0.0 }
+"#;
+    assert!(parse(y)
+        .unwrap_err()
+        .to_string()
+        .contains("scale must not be 0.0"));
+}
+
+#[test]
+fn test_polling_interval_zero_rejected() {
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    polling_interval: "0s"
+    metrics:
+      - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
+"#;
+    assert!(parse(y)
+        .unwrap_err()
+        .to_string()
+        .contains("polling_interval must be at least 100ms"));
+}
+
+#[test]
+fn test_polling_interval_too_short() {
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    polling_interval: "50ms"
+    metrics:
+      - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
+"#;
+    assert!(parse(y)
+        .unwrap_err()
+        .to_string()
+        .contains("polling_interval must be at least 100ms"));
+}
+
+#[test]
+fn test_polling_interval_100ms_ok() {
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    polling_interval: "100ms"
+    metrics:
+      - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
+"#;
+    parse(y).unwrap();
+}
+
+#[test]
+fn test_counter_on_coil_rejected() {
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    metrics:
+      - { name: m, type: counter, register_type: coil, address: 0, data_type: bool }
+"#;
+    assert!(parse(y)
+        .unwrap_err()
+        .to_string()
+        .contains("coil/discrete registers only support gauge"));
+}
+
+#[test]
+fn test_counter_on_discrete_rejected() {
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    metrics:
+      - { name: m, type: counter, register_type: discrete, address: 0, data_type: bool }
+"#;
+    assert!(parse(y)
+        .unwrap_err()
+        .to_string()
+        .contains("coil/discrete registers only support gauge"));
+}
+
+#[test]
+fn test_address_overflow_u32() {
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    metrics:
+      - { name: m, type: gauge, register_type: holding, address: 65535, data_type: u32 }
+"#;
+    assert!(parse(y).unwrap_err().to_string().contains("exceeds 65535"));
+}
+
+#[test]
+fn test_address_overflow_u64() {
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    metrics:
+      - { name: m, type: gauge, register_type: holding, address: 65533, data_type: u64 }
+"#;
+    assert!(parse(y).unwrap_err().to_string().contains("exceeds 65535"));
+}
+
+#[test]
+fn test_address_at_boundary_ok() {
+    // u32 takes 2 registers, so address 65534 + 2 = 65536 which is fine (0-indexed)
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    metrics:
+      - { name: m, type: gauge, register_type: holding, address: 65534, data_type: u32 }
+"#;
+    parse(y).unwrap();
+}
+
+#[test]
+fn test_address_single_register_max() {
+    // u16 at address 65535 — 65535 + 1 = 65536, ok
+    let y = r#"
+exporters:
+  prometheus: { enabled: true }
+collectors:
+  - name: t
+    protocol: { type: tcp, endpoint: "a:502" }
+    slave_id: 1
+    metrics:
+      - { name: m, type: gauge, register_type: holding, address: 65535, data_type: u16 }
+"#;
+    parse(y).unwrap();
 }

@@ -11,7 +11,6 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /src/target/release/otel-modbus-exporter /usr/local/bin/
 EXPOSE 9090
-HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=5 \
-  CMD wget -q -O- http://localhost:9090/metrics > /dev/null 2>&1
+HEALTHCHECK NONE
 ENTRYPOINT ["otel-modbus-exporter"]
 CMD ["--config", "/etc/otel-modbus-exporter/config.yaml"]

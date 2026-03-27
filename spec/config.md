@@ -2,7 +2,25 @@
 
 ## Overview
 
-Configuration is loaded from a YAML file specified via `--config` CLI flag. Default: `config.yaml` in the working directory.
+Configuration is loaded from a YAML file. The file location is determined as follows:
+
+### Config File Resolution
+
+If `--config <path>` is specified, use that path exactly (error if not found).
+
+If `--config` is **not** specified, search in order (first match wins):
+
+1. `./config.yaml` (current working directory — highest priority)
+2. `~/.config/modbus-exporter/config.yaml` (user config)
+3. `/etc/modbus-exporter/config.yaml` (system config)
+
+If none found, exit with an error listing all searched paths.
+
+### Path Resolution
+
+All relative paths within the config file (e.g., `metrics_files` entries) are resolved relative to the **parent directory of the config file that was loaded**, not the current working directory.
+
+Example: config loaded from `~/.config/modbus-exporter/config.yaml` with `metrics_files: ["devices/sdm630.yaml"]` → resolves to `~/.config/modbus-exporter/devices/sdm630.yaml`.
 
 ## Example
 

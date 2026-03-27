@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use collector::{CollectorEngine, ModbusClientFactory, DEFAULT_SHUTDOWN_TIMEOUT};
-use config::{Cli, Config, Protocol};
+use config::{find_config_file, Cli, Config, Protocol};
 use internal_metrics::InternalMetrics;
 use logging::{init_logging, LogOutput, LoggingConfig};
 use metrics::MetricStore;
@@ -116,8 +116,10 @@ async fn main() -> Result<()> {
     // 1. Parse CLI
     let cli = Cli::parse();
 
-    // 2. Load config
-    let config = Config::load(&cli.config).context("failed to load configuration")?;
+    // 2. Find and load config
+    let config_path =
+        find_config_file(cli.config.as_deref()).context("failed to find configuration file")?;
+    let config = Config::load(&config_path).context("failed to load configuration")?;
 
     // 3. Init logging
     let logging_cfg = map_logging_config(&config.logging);

@@ -12,8 +12,43 @@ use tracing::info;
 #[command(name = "modbus-exporter")]
 pub struct Cli {
     /// Path to the configuration file
-    #[arg(short, long, default_value = "config.yaml")]
-    pub config: PathBuf,
+    #[arg(short, long)]
+    pub config: Option<PathBuf>,
+}
+
+/// Default search paths for the config file (in priority order).
+pub const CONFIG_SEARCH_PATHS: &[&str] = &[
+    "./config.yaml",
+    "~/.config/modbus-exporter/config.yaml",
+    "/etc/modbus-exporter/config.yaml",
+];
+
+/// Find the config file using the fallback search order.
+/// If `explicit` is Some, use that exact path (error if missing).
+/// Otherwise search the default locations.
+pub fn find_config_file(explicit: Option<&Path>) -> Result<PathBuf> {
+    if let Some(p) = explicit {
+        if p.exists() {
+            return Ok(p.to_path_buf());
+        }
+        bail!("specified config file not found: {}", p.display());
+    }
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    for pattern in CONFIG_SEARCH_PATHS {
+        let expanded = pattern.replace('~', &home);
+        let path = PathBuf::from(&expanded);
+        if path.exists() {
+            info!(path = %path.display(), "found config file");
+            return Ok(path);
+        }
+    }
+
+    let searched: Vec<String> = CONFIG_SEARCH_PATHS
+        .iter()
+        .map(|p| p.replace('~', &home))
+        .collect();
+    bail!("no config file found; searched:\n{}", searched.join("\n"));
 }
 
 #[derive(Debug, Deserialize, Clone)]

@@ -1023,6 +1023,100 @@ collectors:
     .to_string()
 }
 
+// ── Config search path tests ──────────────────────────────────────────
+
+#[test]
+fn find_config_explicit_path_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("my.yaml");
+    std::fs::write(&cfg, "").unwrap();
+    let result = find_config_file(Some(cfg.as_path()));
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), cfg);
+}
+
+#[test]
+fn find_config_explicit_path_missing() {
+    let result = find_config_file(Some(Path::new("/nonexistent/config.yaml")));
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("specified config file not found"), "{msg}");
+}
+
+#[test]
+fn find_config_fallback_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let old_dir = std::env::current_dir().unwrap();
+    std::fs::write(dir.path().join("config.yaml"), "").unwrap();
+    std::env::set_current_dir(dir.path()).unwrap();
+    let result = find_config_file(None);
+    std::env::set_current_dir(&old_dir).unwrap();
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), PathBuf::from("./config.yaml"));
+}
+
+#[test]
+fn find_config_fallback_none_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let old_dir = std::env::current_dir().unwrap();
+    // empty dir, no config.yaml
+    std::env::set_current_dir(dir.path()).unwrap();
+    // Override HOME so ~/.config path won't match
+    let old_home = std::env::var("HOME").ok();
+    std::env::set_var("HOME", dir.path());
+    let result = find_config_file(None);
+    std::env::set_current_dir(&old_dir).unwrap();
+    if let Some(h) = old_home {
+        std::env::set_var("HOME", h);
+    }
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("no config file found"), "{msg}");
+}
+
+#[test]
+fn resolve_metrics_files_relative_to_config_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let metrics_dir = dir.path().join("metrics");
+    std::fs::create_dir_all(&metrics_dir).unwrap();
+    let metrics_file = metrics_dir.join("test.yaml");
+    std::fs::write(
+        &metrics_file,
+        r#"
+metrics:
+  - name: temp
+    type: gauge
+    register_type: holding
+    address: 0
+    data_type: u16
+"#,
+    )
+    .unwrap();
+
+    let config_yaml = format!(
+        r#"
+exporters:
+  prometheus:
+    enabled: true
+collectors:
+  - name: test
+    protocol:
+      type: tcp
+      endpoint: "localhost:502"
+    slave_id: 1
+    metrics_files:
+      - metrics/test.yaml
+    metrics: []
+"#
+    );
+
+    let config_path = dir.path().join("config.yaml");
+    std::fs::write(&config_path, &config_yaml).unwrap();
+    let config = Config::load(&config_path).unwrap();
+    assert_eq!(config.collectors[0].metrics.len(), 1);
+    assert_eq!(config.collectors[0].metrics[0].name, "temp");
+}
+
 #[test]
 fn test_parse_mqtt_minimal() {
     let c = parse(&mqtt_yaml()).unwrap();

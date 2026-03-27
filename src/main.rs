@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+pub mod collector;
 mod config;
 mod decoder;
 pub mod export;

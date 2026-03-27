@@ -70,7 +70,10 @@ impl MetricStore {
             for (k, v) in &m.labels {
                 final_labels.insert(k.clone(), v.clone());
             }
-            // R2-2: do NOT inject unit into labels
+            // Inject unit as a label when present and non-empty
+            if !m.unit.is_empty() {
+                final_labels.insert("unit".to_string(), m.unit.clone());
+            }
             m.labels = final_labels;
             deduped.insert(m.name.clone(), m);
         }

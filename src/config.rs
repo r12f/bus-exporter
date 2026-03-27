@@ -400,12 +400,12 @@ impl RawMetric {
 impl Collector {
     /// Load and merge metrics from metrics_files and inline metrics.
     pub fn resolve_metrics_files(&mut self, config_dir: &Path) -> Result<()> {
+        let mut merged: IndexMap<String, Metric> = IndexMap::new();
+
         let files = match &self.metrics_files {
             Some(f) if !f.is_empty() => f.clone(),
-            _ => return Ok(()),
+            _ => vec![],
         };
-
-        let mut merged: IndexMap<String, Metric> = IndexMap::new();
 
         for file_path_str in &files {
             let file_path = if Path::new(file_path_str).is_absolute() {
@@ -564,11 +564,7 @@ impl Config {
             if c.metrics.is_empty() {
                 bail!("collector '{}': at least one metric required", c.name);
             }
-            let mut mnames = std::collections::HashSet::new();
             for m in &c.metrics {
-                if !mnames.insert(&m.name) {
-                    bail!("collector '{}': duplicate metric name: {}", c.name, m.name);
-                }
                 if (m.register_type == RegisterType::Coil
                     || m.register_type == RegisterType::Discrete)
                     && m.data_type != DataType::Bool

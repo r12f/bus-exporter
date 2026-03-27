@@ -23,7 +23,11 @@ collectors:
 }
 
 fn parse(yaml: &str) -> Result<Config> {
-    let config: Config = serde_yaml::from_str(yaml).context("parsing YAML")?;
+    let mut config: Config = serde_yaml::from_str(yaml).context("parsing YAML")?;
+    let config_dir = std::path::Path::new(".");
+    for collector in &mut config.collectors {
+        collector.resolve_metrics_files(config_dir)?;
+    }
     config.validate()?;
     Ok(config)
 }
@@ -204,7 +208,7 @@ collectors:
 }
 
 #[test]
-fn test_dup_metric() {
+fn test_dup_metric_last_wins() {
     let y = r#"
 exporters:
   prometheus: { enabled: true }
@@ -216,10 +220,13 @@ collectors:
       - { name: d, type: gauge, register_type: holding, address: 0, data_type: u16 }
       - { name: d, type: counter, register_type: holding, address: 1, data_type: u16 }
 "#;
-    assert!(parse(y)
-        .unwrap_err()
-        .to_string()
-        .contains("duplicate metric name"));
+    let cfg = parse(y).expect("inline dedup should use last-wins");
+    let metrics = &cfg.collectors[0].metrics;
+    assert_eq!(metrics.len(), 1);
+    assert_eq!(metrics[0].name, "d");
+    // Last entry wins: counter at address 1
+    assert_eq!(metrics[0].metric_type, crate::config::MetricType::Counter);
+    assert_eq!(metrics[0].address, 1);
 }
 
 #[test]

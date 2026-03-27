@@ -1,0 +1,108 @@
+# =============================================================================
+# otel-modbus-exporter — example configuration
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+# level: trace | debug | info | warn | error
+# output: stdout | stderr | syslog
+logging:
+  level: info
+  output: stdout
+
+# ---------------------------------------------------------------------------
+# Global labels — applied to every metric from every collector.
+# Collector-level and metric-level labels override these on conflict.
+# ---------------------------------------------------------------------------
+global_labels:
+  site: factory-1
+
+# ---------------------------------------------------------------------------
+# Exporters
+# ---------------------------------------------------------------------------
+exporters:
+  # Prometheus pull endpoint
+  prometheus:
+    enabled: true
+    listen: "0.0.0.0:9090"
+    metrics_path: "/metrics"
+
+  # OTLP gRPC push (disabled by default)
+  otlp:
+    enabled: false
+    endpoint: "http://localhost:4317"
+    timeout: 10s
+    interval: 15s
+    # headers:
+    #   Authorization: "Bearer <token>"
+
+# ---------------------------------------------------------------------------
+# Collectors — each collector polls one Modbus device.
+# ---------------------------------------------------------------------------
+collectors:
+  # ---- TCP example --------------------------------------------------------
+  - name: plc-east
+    protocol:
+      type: tcp
+      endpoint: "192.168.1.10:502"
+    slave_id: 1
+    poll_interval: 5s
+    labels:
+      building: east-wing
+    metrics:
+      # 16-bit unsigned holding register — ambient temperature
+      - name: ambient_temperature
+        type: gauge
+        register_type: holding
+        address: 100
+        data_type: u16
+        unit: "°C"
+        description: "Ambient temperature sensor"
+
+      # 32-bit float holding register — line voltage
+      - name: line_voltage
+        type: gauge
+        register_type: holding
+        address: 200
+        data_type: f32
+        unit: "V"
+        description: "AC line voltage"
+
+      # 32-bit unsigned counter — total energy consumed
+      - name: total_energy_kwh
+        type: counter
+        register_type: holding
+        address: 300
+        data_type: u32
+        unit: "kWh"
+        description: "Cumulative energy meter reading"
+
+      # Signed 16-bit — motor current
+      - name: motor_current
+        type: gauge
+        register_type: holding
+        address: 400
+        data_type: i16
+        unit: "A"
+        description: "Motor drive current"
+
+  # ---- RTU example (commented out) ----------------------------------------
+  # - name: inverter-south
+  #   protocol:
+  #     type: rtu
+  #     port: /dev/ttyUSB0
+  #     baud_rate: 9600
+  #     data_bits: 8
+  #     parity: none
+  #     stop_bits: 1
+  #   slave_id: 2
+  #   poll_interval: 10s
+  #   metrics:
+  #     - name: dc_voltage
+  #       type: gauge
+  #       register_type: holding
+  #       address: 0
+  #       data_type: f32
+  #       unit: "V"
+  #       description: "DC bus voltage"

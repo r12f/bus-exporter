@@ -74,9 +74,8 @@ fn test_label_merging_precedence() {
     assert_eq!(labels.get("region").unwrap(), "ap-south");
     assert_eq!(labels.get("env").unwrap(), "prod");
     assert_eq!(labels.get("collector").unwrap(), "plc1");
-    // R2-2: unit must NOT be in labels
-    assert!(!labels.contains_key("unit"));
-    // unit is on the struct field instead
+    // Unit is injected as a label when non-empty
+    assert_eq!(labels.get("unit").unwrap(), "V");
     assert_eq!(all[0].unit, "V");
 }
 
@@ -146,12 +145,12 @@ fn test_concurrent_reads() {
 }
 
 #[test]
-fn test_unit_not_in_labels() {
+fn test_unit_injected_into_labels() {
     let store = MetricStore::new();
     let g = BTreeMap::new();
     let c = BTreeMap::new();
 
-    // With empty unit
+    // With empty unit — no unit label
     store.publish(
         "c1",
         vec![make_metric("temp", 1.0, MetricType::Gauge)],
@@ -161,12 +160,12 @@ fn test_unit_not_in_labels() {
     let labels = &store.all_metrics_flat()[0].labels;
     assert!(!labels.contains_key("unit"));
 
-    // With non-empty unit — still should NOT be in labels
+    // With non-empty unit — unit IS in labels
     let mut m = make_metric("voltage", 230.0, MetricType::Gauge);
     m.unit = "V".to_string();
     store.publish("c2", vec![m], &g, &c);
     for metric in store.metrics_for("c2") {
-        assert!(!metric.labels.contains_key("unit"));
+        assert_eq!(metric.labels.get("unit").unwrap(), "V");
         assert_eq!(metric.unit, "V");
     }
 }

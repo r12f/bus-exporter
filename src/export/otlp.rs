@@ -465,6 +465,7 @@ pub async fn run(
 }
 
 /// Export current metrics once.
+#[allow(clippy::too_many_arguments)]
 async fn export_once(
     client: &reqwest::Client,
     url: &str,

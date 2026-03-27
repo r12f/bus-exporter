@@ -22,6 +22,12 @@ pub struct CollectorStats {
     pub last_poll_duration_secs: AtomicU64,
 }
 
+impl Default for CollectorStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CollectorStats {
     pub fn new() -> Self {
         Self {
@@ -59,6 +65,12 @@ pub struct InternalMetrics {
     pub prometheus_scrapes_total: AtomicU64,
 }
 
+impl Default for InternalMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InternalMetrics {
     pub fn new() -> Self {
         Self {
@@ -78,7 +90,7 @@ impl InternalMetrics {
     ) -> dashmap::mapref::one::Ref<'_, String, CollectorStats> {
         self.collector_stats
             .entry(name.to_string())
-            .or_insert_with(CollectorStats::new);
+            .or_default();
         self.collector_stats.get(name).unwrap()
     }
 

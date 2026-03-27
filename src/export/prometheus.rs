@@ -104,7 +104,8 @@ fn render_metrics(store: &MetricStore) -> String {
 async fn metrics_handler(State(state): State<Arc<PrometheusState>>) -> impl IntoResponse {
     // Increment scrape counter
     if let Some(ref im) = state.internal_metrics {
-        im.prometheus_scrapes_total.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        im.prometheus_scrapes_total
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     let mut body = render_metrics(&state.store);
@@ -137,7 +138,10 @@ pub async fn serve(
         return Ok(());
     }
 
-    let state = Arc::new(PrometheusState { store, internal_metrics });
+    let state = Arc::new(PrometheusState {
+        store,
+        internal_metrics,
+    });
     let path = config.path.clone();
 
     let app = Router::new()

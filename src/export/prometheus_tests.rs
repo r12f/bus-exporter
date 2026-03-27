@@ -140,7 +140,10 @@ async fn test_http_endpoint() {
         path: "/metrics".to_string(),
     };
 
-    let state = std::sync::Arc::new(PrometheusState { store, internal_metrics: None });
+    let state = std::sync::Arc::new(PrometheusState {
+        store,
+        internal_metrics: None,
+    });
     let app = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics_handler))
         .with_state(state);

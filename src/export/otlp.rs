@@ -483,7 +483,8 @@ async fn export_once(
 
     // Increment OTLP export counter
     if let Some(im) = internal_metrics {
-        im.otlp_exports_total.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        im.otlp_exports_total
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     // Build request with device metrics + internal scope
@@ -505,7 +506,8 @@ async fn export_once(
     {
         // Increment OTLP error counter
         if let Some(im) = internal_metrics {
-            im.otlp_errors_total.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            im.otlp_errors_total
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         error!(error = %e, "OTLP export failed");
     }

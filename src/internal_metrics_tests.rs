@@ -66,7 +66,8 @@ fn test_render_prometheus_contains_expected_metrics() {
     m.prometheus_scrapes_total.store(5, Relaxed);
 
     // Add a collector
-    m.collector_stats.insert("meter_1".to_string(), CollectorStats::new());
+    m.collector_stats
+        .insert("meter_1".to_string(), CollectorStats::new());
     if let Some(s) = m.collector_stats.get("meter_1") {
         s.polls_total.store(42, Relaxed);
         s.polls_success.store(40, Relaxed);
@@ -100,7 +101,8 @@ fn test_render_prometheus_contains_expected_metrics() {
 fn test_to_metric_values() {
     let m = InternalMetrics::new();
     m.collectors_total.store(2, Relaxed);
-    m.collector_stats.insert("c1".to_string(), CollectorStats::new());
+    m.collector_stats
+        .insert("c1".to_string(), CollectorStats::new());
 
     let values = m.to_metric_values();
     let names: Vec<&str> = values.iter().map(|v| v.name.as_str()).collect();

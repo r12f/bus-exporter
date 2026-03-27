@@ -273,7 +273,13 @@ async fn test_multiple_collectors() {
         clients: Mutex::new(vec![Box::new(mock2), Box::new(mock1)]), // reversed since pop
     };
 
-    let engine = CollectorEngine::spawn(vec![cfg1, cfg2], store.clone(), BTreeMap::new(), &factory, None);
+    let engine = CollectorEngine::spawn(
+        vec![cfg1, cfg2],
+        store.clone(),
+        BTreeMap::new(),
+        &factory,
+        None,
+    );
 
     tokio::time::sleep(Duration::from_millis(300)).await;
 

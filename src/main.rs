@@ -157,7 +157,8 @@ async fn main() -> Result<()> {
             let cancel = cancel.clone();
             let im = Arc::clone(&internal_metrics);
             prom_handle = Some(tokio::spawn(async move {
-                if let Err(e) = export::prometheus::serve(&prom_cfg, store, cancel, Some(im)).await {
+                if let Err(e) = export::prometheus::serve(&prom_cfg, store, cancel, Some(im)).await
+                {
                     error!(%e, "Prometheus exporter failed");
                 }
             }));

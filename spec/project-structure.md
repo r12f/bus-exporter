@@ -23,6 +23,7 @@ otel-modbus-exporter/
 │   ├── docker.md
 │   ├── export-otlp.md
 │   ├── export-prometheus.md
+│   ├── logging.md
 │   ├── metrics.md
 │   ├── modbus.md
 │   ├── project-structure.md
@@ -37,6 +38,8 @@ otel-modbus-exporter/
 │   ├── modbus_tests.rs
 │   ├── decoder.rs               # Byte order reordering, type conversion, scale/offset
 │   ├── decoder_tests.rs
+│   ├── logging.rs               # Tracing subscriber init, syslog layer setup
+│   ├── logging_tests.rs
 │   ├── collector.rs             # Poll engine, per-collector async task
 │   ├── collector_tests.rs
 │   ├── metrics.rs               # MetricStore, MetricKey, MetricValue
@@ -54,6 +57,7 @@ otel-modbus-exporter/
 ```
 main
 ├── config
+├── logging
 ├── collector
 │   ├── modbus
 │   ├── decoder

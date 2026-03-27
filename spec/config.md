@@ -11,6 +11,7 @@ Configuration is loaded from a YAML file specified via `--config` CLI flag. Defa
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `global_labels` | `map<string, string>` | No | `{}` | Labels applied to all metrics |
+| `logging` | `Logging` | No | See below | Logging configuration |
 | `exporters` | `Exporters` | Yes | — | Export configuration |
 | `collectors` | `list<Collector>` | Yes | — | At least one collector required |
 
@@ -78,6 +79,21 @@ Configuration is loaded from a YAML file specified via `--config` CLI flag. Defa
 | `scale` | `f64` | No | `1.0` | Multiplicative scale factor |
 | `offset` | `f64` | No | `0.0` | Additive offset |
 | `unit` | `string` | No | `""` | Unit label (e.g., `"V"`, `"kWh"`, `"°C"`) |
+
+### Logging
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `level` | `string` | No | `"info"` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
+| `output` | `string` | No | `"syslog"` | Output target: `syslog`, `stdout`, `stderr` |
+| `syslog_facility` | `string` | No | `"daemon"` | Syslog facility (e.g., `daemon`, `local0`–`local7`) |
+
+```yaml
+logging:
+  level: "info"              # trace|debug|info|warn|error
+  output: "syslog"           # syslog|stdout|stderr
+  syslog_facility: "daemon"
+```
 
 ## Validation Rules
 

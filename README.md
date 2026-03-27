@@ -131,6 +131,7 @@ For TCP-only collectors, the `--device` flag is not needed.
 | `prometheus` | Prometheus metric exposition |
 | `axum` | HTTP server for Prometheus endpoint |
 | `tracing` | Structured logging |
+| `tracing-syslog` | Syslog output layer for tracing |
 | `clap` | CLI argument parsing |
 
 ## License

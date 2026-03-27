@@ -152,6 +152,96 @@ pub fn build_request(
     request
 }
 
+/// Build `ExportMetricsServiceRequest` with a separate internal scope.
+pub fn build_request_with_internal(
+    device_metrics: &[MetricValue],
+    internal_metrics: &[MetricValue],
+    global_labels: &HashMap<String, String>,
+    process_start: SystemTime,
+) -> Vec<u8> {
+    // Resource
+    let mut resource = Vec::new();
+    let mut sorted_labels: Vec<_> = global_labels.iter().collect();
+    sorted_labels.sort_by_key(|(k, _)| k.as_str());
+    for (k, v) in &sorted_labels {
+        encode_key_value(k, v, &mut resource);
+    }
+
+    // Device scope
+    let mut device_scope = Vec::new();
+    encode_ld(1, b"modbus-exporter", &mut device_scope);
+
+    let mut device_scope_metrics = Vec::new();
+    encode_ld(1, &device_scope, &mut device_scope_metrics);
+    for m in device_metrics {
+        let metric_bytes = encode_single_metric(m, process_start);
+        encode_ld(2, &metric_bytes, &mut device_scope_metrics);
+    }
+
+    // Internal scope
+    let mut internal_scope = Vec::new();
+    encode_ld(1, b"modbus-exporter-internal", &mut internal_scope);
+
+    let mut internal_scope_metrics = Vec::new();
+    encode_ld(1, &internal_scope, &mut internal_scope_metrics);
+    for m in internal_metrics {
+        let metric_bytes = encode_single_metric(m, process_start);
+        encode_ld(2, &metric_bytes, &mut internal_scope_metrics);
+    }
+
+    // ResourceMetrics
+    let mut resource_metrics = Vec::new();
+    encode_ld(1, &resource, &mut resource_metrics);
+    encode_ld(2, &device_scope_metrics, &mut resource_metrics);
+    encode_ld(2, &internal_scope_metrics, &mut resource_metrics);
+
+    // ExportMetricsServiceRequest
+    let mut request = Vec::new();
+    encode_ld(1, &resource_metrics, &mut request);
+    request
+}
+
+/// Encode a single Metric message.
+fn encode_single_metric(m: &MetricValue, process_start: SystemTime) -> Vec<u8> {
+    let mut metric = Vec::new();
+    encode_ld(1, m.name.as_bytes(), &mut metric);
+    encode_ld(2, m.description.as_bytes(), &mut metric);
+    encode_ld(3, m.unit.as_bytes(), &mut metric);
+
+    let mut dp = Vec::new();
+    let mut sorted_labels: Vec<_> = m.labels.iter().collect();
+    sorted_labels.sort_by_key(|(k, _)| k.as_str());
+    for (k, v) in &sorted_labels {
+        let mut kv = Vec::new();
+        encode_ld(1, k.as_bytes(), &mut kv);
+        let mut any = Vec::new();
+        encode_ld(1, v.as_bytes(), &mut any);
+        encode_ld(2, &any, &mut kv);
+        encode_ld(7, &kv, &mut dp);
+    }
+    if m.metric_type == MetricType::Counter {
+        encode_fixed64(2, system_time_to_nanos(process_start), &mut dp);
+    }
+    encode_fixed64(3, system_time_to_nanos(m.updated_at), &mut dp);
+    encode_double(4, m.value, &mut dp);
+
+    match m.metric_type {
+        MetricType::Gauge => {
+            let mut gauge = Vec::new();
+            encode_ld(1, &dp, &mut gauge);
+            encode_ld(5, &gauge, &mut metric);
+        }
+        MetricType::Counter => {
+            let mut sum = Vec::new();
+            encode_ld(1, &dp, &mut sum);
+            encode_varint_field(2, 2, &mut sum);
+            encode_varint_field(3, 1, &mut sum);
+            encode_ld(7, &sum, &mut metric);
+        }
+    }
+    metric
+}
+
 // ── HTTP push + retry ─────────────────────────────────────────────────
 
 /// Retry / backoff state with jitter.
@@ -316,6 +406,7 @@ pub async fn run(
     store: MetricStore,
     global_labels: HashMap<String, String>,
     cancel: tokio_util::sync::CancellationToken,
+    internal_metrics: Option<std::sync::Arc<crate::internal_metrics::InternalMetrics>>,
 ) {
     let endpoint = match &config.endpoint {
         Some(ep) => ep.trim_end_matches('/').to_string(),
@@ -351,6 +442,7 @@ pub async fn run(
             &global_labels,
             process_start,
             &cancel,
+            internal_metrics.as_deref(),
         )
         .await;
     }
@@ -366,12 +458,14 @@ pub async fn run(
         &global_labels,
         process_start,
         &flush_token,
+        internal_metrics.as_deref(),
     )
     .await;
     info!("OTLP exporter stopped");
 }
 
 /// Export current metrics once.
+#[allow(clippy::too_many_arguments)]
 async fn export_once(
     client: &reqwest::Client,
     url: &str,
@@ -380,14 +474,28 @@ async fn export_once(
     global_labels: &HashMap<String, String>,
     process_start: SystemTime,
     cancel: &tokio_util::sync::CancellationToken,
+    internal_metrics: Option<&crate::internal_metrics::InternalMetrics>,
 ) {
     let metrics = store.all_metrics_flat();
-    if metrics.is_empty() {
+    if metrics.is_empty() && internal_metrics.is_none() {
         debug!("No metrics to export");
         return;
     }
 
-    let body = build_request(&metrics, global_labels, process_start);
+    // Increment OTLP export counter
+    if let Some(im) = internal_metrics {
+        im.otlp_exports_total
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    // Build request with device metrics + internal scope
+    let body = if let Some(im) = internal_metrics {
+        let internal_values = im.to_metric_values();
+        build_request_with_internal(&metrics, &internal_values, global_labels, process_start)
+    } else {
+        build_request(&metrics, global_labels, process_start)
+    };
+
     debug!(
         metrics_count = metrics.len(),
         bytes = body.len(),
@@ -397,6 +505,11 @@ async fn export_once(
     if let Err(e) =
         send_with_retry(client, url, &config.headers, body, config.timeout, cancel).await
     {
+        // Increment OTLP error counter
+        if let Some(im) = internal_metrics {
+            im.otlp_errors_total
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         error!(error = %e, "OTLP export failed");
     }
 }

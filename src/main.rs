@@ -3,11 +3,13 @@ mod collector;
 mod config;
 mod decoder;
 mod export;
+mod internal_metrics;
 mod logging;
 mod metrics;
 mod modbus;
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -16,6 +18,7 @@ use tracing::{error, info};
 
 use collector::{CollectorEngine, ModbusClientFactory, DEFAULT_SHUTDOWN_TIMEOUT};
 use config::{Cli, Config, Protocol};
+use internal_metrics::InternalMetrics;
 use logging::{init_logging, LogOutput, LoggingConfig};
 use metrics::MetricStore;
 use modbus::{rtu::RtuClient, tcp::TcpClient};
@@ -125,6 +128,13 @@ async fn main() -> Result<()> {
     // 4. Create shared MetricStore
     let store = MetricStore::new();
 
+    // 4b. Create internal metrics
+    let internal_metrics = Arc::new(InternalMetrics::new());
+    internal_metrics.collectors_total.store(
+        config.collectors.len() as u64,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+
     // 5. Spawn collector tasks
     let global_labels: BTreeMap<String, String> =
         config.global_labels.clone().into_iter().collect();
@@ -134,6 +144,7 @@ async fn main() -> Result<()> {
         store.clone(),
         global_labels,
         &factory,
+        Some(Arc::clone(&internal_metrics)),
     );
 
     // 6. Start Prometheus exporter (if enabled)
@@ -144,8 +155,10 @@ async fn main() -> Result<()> {
             let prom_cfg = prom_cfg.clone();
             let store = store.clone();
             let cancel = cancel.clone();
+            let im = Arc::clone(&internal_metrics);
             prom_handle = Some(tokio::spawn(async move {
-                if let Err(e) = export::prometheus::serve(&prom_cfg, store, cancel).await {
+                if let Err(e) = export::prometheus::serve(&prom_cfg, store, cancel, Some(im)).await
+                {
                     error!(%e, "Prometheus exporter failed");
                 }
             }));
@@ -160,8 +173,9 @@ async fn main() -> Result<()> {
             let store = store.clone();
             let global_labels = config.global_labels.clone();
             let cancel = cancel.clone();
+            let im = Arc::clone(&internal_metrics);
             otlp_handle = Some(tokio::spawn(async move {
-                export::otlp::run(otlp_cfg, store, global_labels, cancel).await;
+                export::otlp::run(otlp_cfg, store, global_labels, cancel, Some(im)).await;
             }));
         }
     }

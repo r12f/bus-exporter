@@ -158,6 +158,7 @@ async fn test_collector_polls_and_publishes() {
         store.clone(),
         BTreeMap::new(),
         &factory,
+        None,
     );
 
     // Wait for at least one poll cycle
@@ -187,6 +188,7 @@ async fn test_collector_graceful_shutdown() {
         store.clone(),
         BTreeMap::new(),
         &factory,
+        None,
     );
 
     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -213,6 +215,7 @@ async fn test_collector_reconnects_on_failure() {
         store.clone(),
         BTreeMap::new(),
         &factory,
+        None,
     );
 
     // First poll succeeds, second fails, reconnect + third succeeds
@@ -244,6 +247,7 @@ async fn test_collector_connect_backoff() {
         store.clone(),
         BTreeMap::new(),
         &factory,
+        None,
     );
 
     // Need to wait for backoff: 1s + 2s + poll time
@@ -269,7 +273,13 @@ async fn test_multiple_collectors() {
         clients: Mutex::new(vec![Box::new(mock2), Box::new(mock1)]), // reversed since pop
     };
 
-    let engine = CollectorEngine::spawn(vec![cfg1, cfg2], store.clone(), BTreeMap::new(), &factory);
+    let engine = CollectorEngine::spawn(
+        vec![cfg1, cfg2],
+        store.clone(),
+        BTreeMap::new(),
+        &factory,
+        None,
+    );
 
     tokio::time::sleep(Duration::from_millis(300)).await;
 

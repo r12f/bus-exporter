@@ -130,6 +130,30 @@ assert_value "modbus_frequency_Hz" 200.0
 assert_value "modbus_total_energy_mid_kWh" 900.0
 
 echo ""
+echo "==> Asserting internal metrics..."
+
+# Internal metrics existence
+assert_metric_exists "modbus_exporter_collectors_total"
+assert_metric_exists "modbus_exporter_uptime_seconds"
+assert_metric_exists "modbus_exporter_polls_total"
+assert_metric_exists "modbus_exporter_prometheus_scrapes_total"
+
+# Types
+assert_type "modbus_exporter_collectors_total" "gauge"
+assert_type "modbus_exporter_uptime_seconds" "gauge"
+assert_type "modbus_exporter_polls_total" "counter"
+assert_type "modbus_exporter_prometheus_scrapes_total" "counter"
+
+# Uptime should be > 0
+UPTIME_VAL=$(echo "$METRICS" | grep "^modbus_exporter_uptime_seconds " | awk '{print $2}')
+if [ -n "$UPTIME_VAL" ] && awk "BEGIN { exit !($UPTIME_VAL > 0) }"; then
+  echo "  PASS: uptime_seconds=${UPTIME_VAL} > 0"
+else
+  echo "  FAIL: uptime_seconds=${UPTIME_VAL} not > 0"
+  FAILURES=$((FAILURES + 1))
+fi
+
+echo ""
 echo "==> Testing graceful shutdown..."
 EXPORTER_CONTAINER=$(docker compose -f "$COMPOSE_FILE" ps -q modbus-exporter)
 if [ -n "$EXPORTER_CONTAINER" ]; then

@@ -4,12 +4,14 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, instrument};
 
 use crate::config::PrometheusExporter;
+use crate::internal_metrics::InternalMetrics;
 use crate::metrics::{MetricStore, MetricType, MetricValue};
 
 /// Shared state for the Prometheus HTTP handler.
 #[derive(Debug, Clone)]
 struct PrometheusState {
     store: MetricStore,
+    internal_metrics: Option<Arc<InternalMetrics>>,
 }
 
 /// Sanitise a string so it matches `[a-zA-Z_][a-zA-Z0-9_]*`.
@@ -100,7 +102,20 @@ fn render_metrics(store: &MetricStore) -> String {
 /// Handler for `/metrics` (or configured path).
 #[instrument(skip_all)]
 async fn metrics_handler(State(state): State<Arc<PrometheusState>>) -> impl IntoResponse {
-    let body = render_metrics(&state.store);
+    // Increment scrape counter
+    if let Some(ref im) = state.internal_metrics {
+        im.prometheus_scrapes_total
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    let mut body = render_metrics(&state.store);
+
+    // Append internal metrics
+    if let Some(ref im) = state.internal_metrics {
+        body.push('\n');
+        body.push_str(&im.render_prometheus());
+    }
+
     (
         StatusCode::OK,
         [("content-type", "text/plain; version=0.0.4; charset=utf-8")],
@@ -116,13 +131,17 @@ pub async fn serve(
     config: &PrometheusExporter,
     store: MetricStore,
     cancel: CancellationToken,
+    internal_metrics: Option<Arc<InternalMetrics>>,
 ) -> anyhow::Result<()> {
     if !config.enabled {
         info!("Prometheus exporter disabled");
         return Ok(());
     }
 
-    let state = Arc::new(PrometheusState { store });
+    let state = Arc::new(PrometheusState {
+        store,
+        internal_metrics,
+    });
     let path = config.path.clone();
 
     let app = Router::new()

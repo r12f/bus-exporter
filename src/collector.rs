@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::Ordering::Relaxed;
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -7,6 +9,7 @@ use tracing::{error, info, instrument, warn};
 
 use crate::config::{self, RegisterType};
 use crate::decoder;
+use crate::internal_metrics::InternalMetrics;
 use crate::metrics::{MetricStore, MetricType, MetricValue};
 use crate::modbus::ModbusClient;
 
@@ -105,6 +108,7 @@ async fn run_collector(
     store: MetricStore,
     global_labels: BTreeMap<String, String>,
     mut shutdown_rx: watch::Receiver<bool>,
+    internal_metrics: Option<Arc<InternalMetrics>>,
 ) {
     let collector_labels: BTreeMap<String, String> = collector
         .labels
@@ -143,6 +147,13 @@ async fn run_collector(
         let start = Instant::now();
         let mut local_cache: HashMap<String, MetricValue> = HashMap::new();
         let mut connection_error = false;
+        let mut poll_had_error = false;
+
+        // Increment polls_total
+        if let Some(ref im) = internal_metrics {
+            let stats = im.get_or_create_collector(&collector.name);
+            stats.polls_total.fetch_add(1, Relaxed);
+        }
 
         for metric_cfg in &collector.metrics {
             // Check shutdown between metrics
@@ -150,6 +161,12 @@ async fn run_collector(
                 info!("shutdown requested, exiting");
                 let _ = client.disconnect().await;
                 return;
+            }
+
+            // Increment modbus_requests
+            if let Some(ref im) = internal_metrics {
+                let stats = im.get_or_create_collector(&collector.name);
+                stats.modbus_requests.fetch_add(1, Relaxed);
             }
 
             match read_metric(client.as_mut(), metric_cfg).await {
@@ -168,12 +185,20 @@ async fn run_collector(
                     );
                 }
                 Err(e) => {
+                    // Increment modbus_errors
+                    if let Some(ref im) = internal_metrics {
+                        let stats = im.get_or_create_collector(&collector.name);
+                        stats.modbus_errors.fetch_add(1, Relaxed);
+                    }
+
                     // Check if this is a connection-level error
                     if !client.is_connected() {
                         error!(error = %e, "connection lost during poll");
                         connection_error = true;
+                        poll_had_error = true;
                         break;
                     }
+                    poll_had_error = true;
                     let count = error_counts.entry(metric_cfg.name.clone()).or_insert(0);
                     *count += 1;
                     warn!(metric = %metric_cfg.name, error = %e, error_count = *count, "metric read failed, retaining previous value");
@@ -182,6 +207,14 @@ async fn run_collector(
         }
 
         if connection_error {
+            // Record error metrics before reconnecting
+            if let Some(ref im) = internal_metrics {
+                let elapsed_secs = start.elapsed().as_secs_f64();
+                let stats = im.get_or_create_collector(&collector.name);
+                stats.set_poll_duration(elapsed_secs);
+                stats.polls_error.fetch_add(1, Relaxed);
+            }
+
             // Reconnect with backoff
             loop {
                 let _ = client.disconnect().await;
@@ -209,6 +242,18 @@ async fn run_collector(
 
         // Successful poll cycle — reset backoff
         backoff = INITIAL_BACKOFF;
+
+        // Record poll duration and success/error
+        if let Some(ref im) = internal_metrics {
+            let elapsed_secs = start.elapsed().as_secs_f64();
+            let stats = im.get_or_create_collector(&collector.name);
+            stats.set_poll_duration(elapsed_secs);
+            if poll_had_error {
+                stats.polls_error.fetch_add(1, Relaxed);
+            } else {
+                stats.polls_success.fetch_add(1, Relaxed);
+            }
+        }
 
         // Merge: carry forward previous values for failed metrics, updating timestamp
         let now = SystemTime::now();
@@ -299,6 +344,7 @@ impl CollectorEngine {
         store: MetricStore,
         global_labels: BTreeMap<String, String>,
         factory: &dyn ModbusClientFactory,
+        internal_metrics: Option<Arc<InternalMetrics>>,
     ) -> Self {
         let (shutdown_tx, _) = watch::channel(false);
         let mut handles = Vec::with_capacity(collectors.len());
@@ -308,6 +354,7 @@ impl CollectorEngine {
             let store = store.clone();
             let global_labels = global_labels.clone();
             let shutdown_rx = shutdown_tx.subscribe();
+            let im = internal_metrics.clone();
 
             let handle = tokio::spawn(run_collector(
                 client,
@@ -315,6 +362,7 @@ impl CollectorEngine {
                 store,
                 global_labels,
                 shutdown_rx,
+                im,
             ));
             handles.push(handle);
         }

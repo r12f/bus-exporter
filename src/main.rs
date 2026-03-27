@@ -2,6 +2,7 @@
 pub mod collector;
 mod config;
 mod decoder;
+pub mod export;
 mod logging;
 pub mod metrics;
 mod modbus;

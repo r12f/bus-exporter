@@ -106,8 +106,14 @@ pub struct OtlpExporter {
     pub endpoint: Option<String>,
     #[serde(default = "default_otlp_timeout", with = "humantime_serde")]
     pub timeout: Duration,
+    #[serde(default = "default_otlp_interval", with = "humantime_serde")]
+    pub interval: Duration,
     #[serde(default)]
     pub headers: HashMap<String, String>,
+}
+
+fn default_otlp_interval() -> Duration {
+    Duration::from_secs(10)
 }
 
 fn default_otlp_timeout() -> Duration {

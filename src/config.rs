@@ -320,6 +320,21 @@ impl Config {
                     c.polling_interval
                 );
             }
+            // Validate TCP endpoint format (must be parseable as host:port)
+            if let Protocol::Tcp { endpoint } = &c.protocol {
+                // Must contain at least one colon separating host from port,
+                // and the port part must be a valid u16.
+                let valid = endpoint
+                    .rsplit_once(':')
+                    .is_some_and(|(_, port)| port.parse::<u16>().is_ok());
+                if !valid {
+                    bail!(
+                        "collector '{}': invalid TCP endpoint '{}' (expected host:port, e.g. 127.0.0.1:502)",
+                        c.name,
+                        endpoint
+                    );
+                }
+            }
             // Validate RTU data_bits and stop_bits ranges
             if let Protocol::Rtu {
                 data_bits,

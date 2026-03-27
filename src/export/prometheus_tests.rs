@@ -119,7 +119,8 @@ async fn test_serve_disabled() {
         path: "/metrics".to_string(),
     };
     let store = MetricStore::new();
-    let result = serve(&config, store).await;
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let result = serve(&config, store, cancel).await;
     assert!(result.is_ok());
 }
 

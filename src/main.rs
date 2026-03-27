@@ -7,26 +7,191 @@ mod logging;
 pub mod metrics;
 mod modbus;
 
+use std::collections::BTreeMap;
+use std::net::SocketAddr;
+
+use anyhow::{Context, Result};
 use clap::Parser;
-use logging::{init_logging, LoggingConfig};
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info};
 
-fn main() {
-    let config = LoggingConfig::default();
-    if let Err(e) = init_logging(&config) {
-        eprintln!("failed to initialize logging: {e}");
-    }
+use collector::{CollectorEngine, ModbusClientFactory, DEFAULT_SHUTDOWN_TIMEOUT};
+use config::{Cli, Config, Protocol};
+use logging::{init_logging, LogOutput, LoggingConfig};
+use metrics::MetricStore;
+use modbus::{rtu::RtuClient, tcp::TcpClient};
 
-    let cli = config::Cli::parse();
-    match config::Config::load(&cli.config) {
-        Ok(config) => {
-            println!(
-                "Loaded config with {} collector(s)",
-                config.collectors.len()
-            );
-        }
-        Err(e) => {
-            eprintln!("Error loading config: {e:#}");
-            std::process::exit(1);
+// ── Real Modbus client factory ────────────────────────────────────────
+
+struct RealModbusClientFactory;
+
+impl ModbusClientFactory for RealModbusClientFactory {
+    fn create(&self, collector: &config::Collector) -> Box<dyn modbus::ModbusClient> {
+        match &collector.protocol {
+            Protocol::Tcp { endpoint } => {
+                let addr: SocketAddr = endpoint
+                    .parse()
+                    .expect("invalid TCP endpoint should have been caught by config validation");
+                Box::new(TcpClient::new(addr, collector.slave_id))
+            }
+            Protocol::Rtu {
+                device,
+                bps,
+                data_bits,
+                stop_bits,
+                parity,
+            } => {
+                let builder = tokio_serial::new(device, *bps)
+                    .data_bits(match data_bits {
+                        5 => tokio_serial::DataBits::Five,
+                        6 => tokio_serial::DataBits::Six,
+                        7 => tokio_serial::DataBits::Seven,
+                        _ => tokio_serial::DataBits::Eight,
+                    })
+                    .stop_bits(match stop_bits {
+                        2 => tokio_serial::StopBits::Two,
+                        _ => tokio_serial::StopBits::One,
+                    })
+                    .parity(match parity {
+                        config::Parity::None => tokio_serial::Parity::None,
+                        config::Parity::Even => tokio_serial::Parity::Even,
+                        config::Parity::Odd => tokio_serial::Parity::Odd,
+                    });
+                Box::new(RtuClient::new(builder, collector.slave_id))
+            }
         }
     }
 }
+
+// ── Config → logging mapping ──────────────────────────────────────────
+
+fn map_logging_config(cfg: &config::Logging) -> LoggingConfig {
+    let level = match cfg.level {
+        config::LogLevel::Trace => "trace",
+        config::LogLevel::Debug => "debug",
+        config::LogLevel::Info => "info",
+        config::LogLevel::Warn => "warn",
+        config::LogLevel::Error => "error",
+    }
+    .to_string();
+
+    let output = match cfg.output {
+        config::LogOutput::Stdout => LogOutput::Stdout,
+        config::LogOutput::Stderr => LogOutput::Stderr,
+        // Syslog output is not yet implemented as a native syslog transport.
+        // We map it to structured JSON as an interim solution, because JSON
+        // is the closest machine-readable format and is easy to forward into
+        // syslog-compatible collectors (e.g. Vector, Fluentd, journald).
+        config::LogOutput::Syslog => LogOutput::Json,
+    };
+
+    LoggingConfig { level, output }
+}
+
+// ── Shutdown signal ───────────────────────────────────────────────────
+
+async fn shutdown_signal() {
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    {
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to register SIGTERM handler");
+        tokio::select! {
+            _ = ctrl_c => info!("received SIGINT"),
+            _ = sigterm.recv() => info!("received SIGTERM"),
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        ctrl_c.await.expect("failed to listen for Ctrl+C");
+        info!("received SIGINT");
+    }
+}
+
+// ── Entry point ───────────────────────────────────────────────────────
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // 1. Parse CLI
+    let cli = Cli::parse();
+
+    // 2. Load config
+    let config = Config::load(&cli.config).context("failed to load configuration")?;
+
+    // 3. Init logging
+    let logging_cfg = map_logging_config(&config.logging);
+    init_logging(&logging_cfg).context("failed to initialize logging")?;
+
+    info!(collectors = config.collectors.len(), "configuration loaded");
+
+    // 4. Create shared MetricStore
+    let store = MetricStore::new();
+
+    // 5. Spawn collector tasks
+    let global_labels: BTreeMap<String, String> =
+        config.global_labels.clone().into_iter().collect();
+    let factory = RealModbusClientFactory;
+    let engine = CollectorEngine::spawn(
+        config.collectors.clone(),
+        store.clone(),
+        global_labels,
+        &factory,
+    );
+
+    // 6. Start Prometheus exporter (if enabled)
+    let cancel = CancellationToken::new();
+    let mut prom_handle = None;
+    if let Some(ref prom_cfg) = config.exporters.prometheus {
+        if prom_cfg.enabled {
+            let prom_cfg = prom_cfg.clone();
+            let store = store.clone();
+            let cancel = cancel.clone();
+            prom_handle = Some(tokio::spawn(async move {
+                if let Err(e) = export::prometheus::serve(&prom_cfg, store, cancel).await {
+                    error!(%e, "Prometheus exporter failed");
+                }
+            }));
+        }
+    }
+
+    // 7. Start OTLP exporter (if enabled)
+    let mut otlp_handle = None;
+    if let Some(ref otlp_cfg) = config.exporters.otlp {
+        if otlp_cfg.enabled {
+            let otlp_cfg = otlp_cfg.clone();
+            let store = store.clone();
+            let global_labels = config.global_labels.clone();
+            let cancel = cancel.clone();
+            otlp_handle = Some(tokio::spawn(async move {
+                export::otlp::run(otlp_cfg, store, global_labels, cancel).await;
+            }));
+        }
+    }
+
+    // 8. Wait for shutdown signal
+    shutdown_signal().await;
+    info!("initiating graceful shutdown");
+
+    // Cancel exporters
+    cancel.cancel();
+
+    // Shutdown collectors with timeout
+    engine.shutdown(DEFAULT_SHUTDOWN_TIMEOUT).await;
+
+    // Wait for exporter tasks
+    if let Some(h) = prom_handle {
+        let _ = h.await;
+    }
+    if let Some(h) = otlp_handle {
+        let _ = h.await;
+    }
+
+    info!("shutdown complete");
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod tests;

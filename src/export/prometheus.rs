@@ -1,5 +1,6 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Router};
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, instrument};
 
 use crate::config::PrometheusExporter;
@@ -111,7 +112,11 @@ async fn metrics_handler(State(state): State<Arc<PrometheusState>>) -> impl Into
 ///
 /// This function runs until the server is shut down or the process exits.
 #[instrument(skip(store))]
-pub async fn serve(config: &PrometheusExporter, store: MetricStore) -> anyhow::Result<()> {
+pub async fn serve(
+    config: &PrometheusExporter,
+    store: MetricStore,
+    cancel: CancellationToken,
+) -> anyhow::Result<()> {
     if !config.enabled {
         info!("Prometheus exporter disabled");
         return Ok(());
@@ -126,7 +131,9 @@ pub async fn serve(config: &PrometheusExporter, store: MetricStore) -> anyhow::R
 
     let listener = tokio::net::TcpListener::bind(&config.listen).await?;
     info!(listen = %config.listen, path = %path, "Prometheus exporter started");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move { cancel.cancelled().await })
+        .await?;
     Ok(())
 }
 

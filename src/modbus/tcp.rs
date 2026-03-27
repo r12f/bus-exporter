@@ -1,0 +1,132 @@
+use std::net::SocketAddr;
+
+use anyhow::{Context, Result};
+use async_trait::async_trait;
+use tokio_modbus::client::{tcp, Context as ModbusContext, Reader};
+use tokio_modbus::Slave;
+
+use super::{
+    validate_coil_count, validate_register_count, ModbusConnection, ModbusReader, READ_TIMEOUT,
+};
+
+/// Modbus TCP client.
+pub struct TcpClient {
+    endpoint: SocketAddr,
+    slave_id: u8,
+    context: Option<ModbusContext>,
+}
+
+impl TcpClient {
+    /// Create a new TCP client (does not connect yet).
+    pub fn new(endpoint: SocketAddr, slave_id: u8) -> Self {
+        Self {
+            endpoint,
+            slave_id,
+            context: None,
+        }
+    }
+
+    /// Return a reference to the inner context or an error with slave/endpoint info.
+    fn ctx(&mut self) -> Result<&mut ModbusContext> {
+        self.context.as_mut().with_context(|| {
+            format!(
+                "not connected (endpoint={}, slave={})",
+                self.endpoint, self.slave_id
+            )
+        })
+    }
+}
+
+#[async_trait]
+impl ModbusConnection for TcpClient {
+    async fn connect(&mut self) -> Result<()> {
+        if self.context.is_some() {
+            self.disconnect().await.ok();
+        }
+        let ctx = tcp::connect_slave(self.endpoint, Slave(self.slave_id))
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to connect to {} (slave={})",
+                    self.endpoint, self.slave_id
+                )
+            })?;
+        self.context = Some(ctx);
+        Ok(())
+    }
+
+    async fn disconnect(&mut self) -> Result<()> {
+        self.context.take();
+        Ok(())
+    }
+
+    fn is_connected(&self) -> bool {
+        self.context.is_some()
+    }
+}
+
+#[async_trait]
+impl ModbusReader for TcpClient {
+    async fn read_holding_registers(&mut self, addr: u16, count: u16) -> Result<Vec<u16>> {
+        validate_register_count(count)?;
+        let ctx = self.ctx()?;
+        let data = tokio::time::timeout(READ_TIMEOUT, ctx.read_holding_registers(addr, count))
+            .await
+            .with_context(|| format!("read_holding_registers timed out (addr={addr}, count={count}, endpoint={}, slave={})", self.endpoint, self.slave_id))?
+            .with_context(|| format!("read_holding_registers failed (addr={addr}, count={count}, endpoint={}, slave={})", self.endpoint, self.slave_id))?
+            .with_context(|| format!("read_holding_registers empty response (addr={addr}, count={count}, endpoint={}, slave={})", self.endpoint, self.slave_id))?;
+        Ok(data)
+    }
+
+    async fn read_input_registers(&mut self, addr: u16, count: u16) -> Result<Vec<u16>> {
+        validate_register_count(count)?;
+        let ctx = self.ctx()?;
+        let data = tokio::time::timeout(READ_TIMEOUT, ctx.read_input_registers(addr, count))
+            .await
+            .with_context(|| format!("read_input_registers timed out (addr={addr}, count={count}, endpoint={}, slave={})", self.endpoint, self.slave_id))?
+            .with_context(|| format!("read_input_registers failed (addr={addr}, count={count}, endpoint={}, slave={})", self.endpoint, self.slave_id))?
+            .with_context(|| format!("read_input_registers empty response (addr={addr}, count={count}, endpoint={}, slave={})", self.endpoint, self.slave_id))?;
+        Ok(data)
+    }
+
+    async fn read_coils(&mut self, addr: u16, count: u16) -> Result<Vec<bool>> {
+        validate_coil_count(count)?;
+        let ctx = self.ctx()?;
+        let data = tokio::time::timeout(READ_TIMEOUT, ctx.read_coils(addr, count))
+            .await
+            .with_context(|| {
+                format!(
+                    "read_coils timed out (addr={addr}, count={count}, endpoint={}, slave={})",
+                    self.endpoint, self.slave_id
+                )
+            })?
+            .with_context(|| {
+                format!(
+                    "read_coils failed (addr={addr}, count={count}, endpoint={}, slave={})",
+                    self.endpoint, self.slave_id
+                )
+            })?
+            .with_context(|| {
+                format!(
+                    "read_coils empty response (addr={addr}, count={count}, endpoint={}, slave={})",
+                    self.endpoint, self.slave_id
+                )
+            })?;
+        Ok(data)
+    }
+
+    async fn read_discrete_inputs(&mut self, addr: u16, count: u16) -> Result<Vec<bool>> {
+        validate_coil_count(count)?;
+        let ctx = self.ctx()?;
+        let data = tokio::time::timeout(READ_TIMEOUT, ctx.read_discrete_inputs(addr, count))
+            .await
+            .with_context(|| format!("read_discrete_inputs timed out (addr={addr}, count={count}, endpoint={}, slave={})", self.endpoint, self.slave_id))?
+            .with_context(|| format!("read_discrete_inputs failed (addr={addr}, count={count}, endpoint={}, slave={})", self.endpoint, self.slave_id))?
+            .with_context(|| format!("read_discrete_inputs empty response (addr={addr}, count={count}, endpoint={}, slave={})", self.endpoint, self.slave_id))?;
+        Ok(data)
+    }
+}
+
+#[cfg(test)]
+#[path = "tcp_tests.rs"]
+mod tcp_tests;

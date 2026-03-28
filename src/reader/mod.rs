@@ -17,7 +17,7 @@ pub struct ReaderCapabilities {
 
 /// Unified interface for reading metrics from any bus protocol.
 #[async_trait]
-pub trait MetricReader: Send + Sync {
+pub trait MetricReader: Send {
     // ── Connection ──────────────────────────────────────────────────
 
     /// Establish the underlying connection/transport.

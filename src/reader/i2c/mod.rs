@@ -102,6 +102,7 @@ pub struct I2cMetricReader {
     bus_path: String,
     address: u8,
     connected: bool,
+    bus_lock: Option<BusLock>,
 }
 
 /// Per-bus mutex map for serializing access.
@@ -123,7 +124,13 @@ impl I2cMetricReader {
             bus_path,
             address,
             connected: false,
+            bus_lock: None,
         }
+    }
+
+    /// Set the bus lock (for serializing access to the shared I2C bus).
+    pub fn set_bus_lock(&mut self, lock: BusLock) {
+        self.bus_lock = Some(lock);
     }
 
     /// Read bytes from a register address on the I2C device.
@@ -179,9 +186,9 @@ pub async fn read_i2c_metric(
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-/// Connection/lifecycle trait impl for I2cMetricReader (mirrors BusConnection).
+/// Unified MetricReader implementation for I2C.
 #[async_trait]
-impl crate::reader::modbus::BusConnection for I2cMetricReader {
+impl crate::reader::MetricReader for I2cMetricReader {
     async fn connect(&mut self) -> Result<()> {
         self.connected = true;
         Ok(())
@@ -194,6 +201,18 @@ impl crate::reader::modbus::BusConnection for I2cMetricReader {
 
     fn is_connected(&self) -> bool {
         self.connected
+    }
+
+    fn capabilities(&self) -> crate::reader::ReaderCapabilities {
+        crate::reader::ReaderCapabilities { batch_read: false }
+    }
+
+    async fn read(&mut self, metric: &config::MetricConfig) -> Result<f64> {
+        let bus_lock = self
+            .bus_lock
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("I2C bus lock not set"))?;
+        read_i2c_metric(self, metric, bus_lock).await
     }
 }
 

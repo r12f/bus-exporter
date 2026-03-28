@@ -169,6 +169,40 @@ impl ModbusReader for ModbusRtuMetricReader {
     }
 }
 
+#[async_trait]
+impl crate::reader::MetricReader for ModbusRtuMetricReader {
+    async fn connect(&mut self) -> Result<()> {
+        BusConnection::connect(self).await
+    }
+
+    async fn disconnect(&mut self) -> Result<()> {
+        BusConnection::disconnect(self).await
+    }
+
+    fn is_connected(&self) -> bool {
+        BusConnection::is_connected(self)
+    }
+
+    fn capabilities(&self) -> crate::reader::ReaderCapabilities {
+        crate::reader::ReaderCapabilities { batch_read: true }
+    }
+
+    async fn read(&mut self, metric: &crate::config::MetricConfig) -> Result<f64> {
+        super::read_modbus_metric(self, metric).await
+    }
+
+    async fn batch_read<'a>(
+        &mut self,
+        metrics: &'a [crate::config::MetricConfig],
+    ) -> Vec<(&'a crate::config::MetricConfig, Result<f64>)> {
+        let super::batch::BatchReadResult {
+            results,
+            read_count: _,
+        } = super::batch::batch_read_coalesced(self, metrics).await;
+        results
+    }
+}
+
 #[cfg(test)]
 #[path = "rtu_tests.rs"]
 mod rtu_tests;

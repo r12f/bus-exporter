@@ -44,6 +44,6 @@ Located in `tests/` directory.
 
 ## E2E Tests
 
-E2E tests validate the full pipeline using a Rust-native harness. They spawn a `tokio-modbus` TCP server with pre-loaded register values, launch the exporter as a child process, and assert against the Prometheus `/metrics` endpoint. No Docker is required.
+E2E tests validate the full pipeline using real Docker containers rather than in-process mocks. They use `oitc/modbus-server` as a Modbus TCP simulator with pre-loaded register values, and assert against the Prometheus `/metrics` endpoint.
 
 See [e2e-testing.md](e2e-testing.md) for the full E2E testing specification.

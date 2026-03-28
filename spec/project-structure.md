@@ -18,6 +18,7 @@ bus-exporter/
 ├── config/
 │   ├── test.yaml                # Exporter config for E2E tests
 │   └── modbus-simulator.json    # Simulator register config for E2E tests
+├── docker-compose.test.yml      # E2E test compose stack
 ├── spec/
 │   ├── ci.md
 │   ├── collector.md
@@ -36,22 +37,15 @@ bus-exporter/
 ├── src/
 │   ├── main.rs                  # CLI entry point, config loading, task orchestration
 │   ├── main_tests.rs
-│   ├── lib.rs                   # Library re-exports for integration tests
-│   ├── bus.rs                   # Shared helpers (map_byte_order, map_data_type)
 │   ├── config.rs                # Config structs, YAML deserialization, validation
 │   ├── config_tests.rs
-│   ├── internal_metrics.rs      # Internal metrics tracking
-│   ├── internal_metrics_tests.rs
 │   ├── modbus/
-│   │   ├── mod.rs               # BusConnection trait, Modbus client
+│   │   ├── mod.rs               # ModbusClient trait
 │   │   ├── mod_tests.rs
 │   │   ├── tcp.rs               # TCP client impl
 │   │   ├── tcp_tests.rs
 │   │   ├── rtu.rs               # RTU client impl
 │   │   └── rtu_tests.rs
-│   ├── i3c/
-│   │   ├── mod.rs              # I3C client impl
-│   │   └── mod_tests.rs
 │   ├── i2c/
 │   │   ├── mod.rs              # I2C client impl
 │   │   └── mod_tests.rs
@@ -71,13 +65,11 @@ bus-exporter/
 │   │   ├── otlp.rs              # OTLP protobuf/HTTP exporter
 │   │   ├── otlp_tests.rs
 │   │   ├── prometheus.rs        # Prometheus /metrics HTTP server
-│   │   ├── prometheus_tests.rs
-│   │   ├── mqtt.rs              # MQTT exporter
-│   │   └── mqtt_tests.rs
+│   │   └── prometheus_tests.rs
 └── tests/
     ├── integration_test.rs      # End-to-end with mock Modbus server
-    ├── e2e_modbus.rs            # Rust-native Modbus e2e test
-    └── e2e_i3c.rs               # I3C integration tests
+    └── e2e/
+        └── run.sh               # E2E test script (docker-compose based)
 ```
 
 ## Module Dependency Graph
@@ -86,10 +78,12 @@ bus-exporter/
 main
 ├── config
 ├── logging
-├── bus
 ├── collector
 │   ├── modbus (modbus::tcp, modbus::rtu)
+│   ├── i2c
+│   ├── spi
 │   ├── i3c
+│   ├── bus (shared helpers)
 │   ├── decoder
 │   └── metrics
 ├── internal_metrics

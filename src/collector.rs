@@ -14,7 +14,7 @@ use crate::internal_metrics::InternalMetrics;
 use crate::metrics::{MetricStore, MetricType, MetricValue};
 use crate::reader::i2c::{self, I2cClient};
 use crate::reader::i3c;
-use crate::reader::modbus::ModbusClient;
+use crate::reader::modbus::{BusConnection, ModbusClient};
 use crate::reader::spi::{self, SpiClient};
 
 /// Maximum backoff duration for reconnection attempts.
@@ -53,14 +53,8 @@ impl BusClient {
     async fn connect(&mut self) -> Result<()> {
         match self {
             BusClient::Modbus(c) => c.connect().await,
-            BusClient::I2c { client, .. } => {
-                use crate::reader::modbus::BusConnection;
-                client.connect().await
-            }
-            BusClient::Spi { client, .. } => {
-                use crate::reader::modbus::BusConnection;
-                client.connect().await
-            }
+            BusClient::I2c { client, .. } => client.connect().await,
+            BusClient::Spi { client, .. } => client.connect().await,
             BusClient::I3c { client, .. } => {
                 let mut c = client.lock().await;
                 c.connect().await
@@ -71,14 +65,8 @@ impl BusClient {
     async fn disconnect(&mut self) -> Result<()> {
         match self {
             BusClient::Modbus(c) => c.disconnect().await,
-            BusClient::I2c { client, .. } => {
-                use crate::reader::modbus::BusConnection;
-                client.disconnect().await
-            }
-            BusClient::Spi { client, .. } => {
-                use crate::reader::modbus::BusConnection;
-                client.disconnect().await
-            }
+            BusClient::I2c { client, .. } => client.disconnect().await,
+            BusClient::Spi { client, .. } => client.disconnect().await,
             BusClient::I3c { client, .. } => {
                 let mut c = client.lock().await;
                 c.disconnect().await
@@ -89,14 +77,8 @@ impl BusClient {
     fn is_connected(&self) -> bool {
         match self {
             BusClient::Modbus(c) => c.is_connected(),
-            BusClient::I2c { client, .. } => {
-                use crate::reader::modbus::BusConnection;
-                client.is_connected()
-            }
-            BusClient::Spi { client, .. } => {
-                use crate::reader::modbus::BusConnection;
-                client.is_connected()
-            }
+            BusClient::I2c { client, .. } => client.is_connected(),
+            BusClient::Spi { client, .. } => client.is_connected(),
             BusClient::I3c { client, .. } => {
                 // Best-effort: try_lock to avoid blocking
                 client.try_lock().map(|c| c.is_connected()).unwrap_or(true)

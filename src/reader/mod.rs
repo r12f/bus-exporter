@@ -17,7 +17,7 @@ pub struct ReaderCapabilities {
 
 /// Unified interface for reading metrics from any bus protocol.
 #[async_trait]
-pub trait MetricReader: Send {
+pub trait MetricReader: Send + Sync {
     /// Read a single metric, returning its numeric value.
     async fn read(&mut self, metric: &MetricConfig) -> Result<f64>;
 

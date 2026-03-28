@@ -1,4 +1,4 @@
-use super::{ModbusConnection, ModbusReader};
+use super::{BusConnection, ModbusReader};
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 
@@ -24,7 +24,7 @@ impl MockClient {
 }
 
 #[async_trait]
-impl ModbusConnection for MockClient {
+impl BusConnection for MockClient {
     async fn connect(&mut self) -> Result<()> {
         if self.connected {
             self.disconnect().await.ok();

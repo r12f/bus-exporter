@@ -270,10 +270,27 @@ pub enum Protocol {
         parity: Parity,
     },
     #[serde(rename = "i2c")]
-    I2c {
-        bus: String,
-        address: u8,
+    I2c { bus: String, address: u8 },
+    #[serde(rename = "spi")]
+    Spi {
+        device: String,
+        #[serde(default = "default_spi_speed_hz")]
+        speed_hz: u32,
+        #[serde(default = "default_spi_mode")]
+        mode: u8,
+        #[serde(default = "default_spi_bits_per_word")]
+        bits_per_word: u8,
     },
+}
+
+fn default_spi_speed_hz() -> u32 {
+    1_000_000
+}
+fn default_spi_mode() -> u8 {
+    0
+}
+fn default_spi_bits_per_word() -> u8 {
+    8
 }
 
 fn default_bps() -> u32 {
@@ -304,7 +321,7 @@ pub struct Metric {
     #[serde(rename = "type")]
     pub metric_type: MetricType,
     pub register_type: Option<RegisterType>,
-    pub address: u16,
+    pub address: Option<u16>,
     pub data_type: DataType,
     #[serde(default = "default_byte_order")]
     pub byte_order: ByteOrder,
@@ -314,6 +331,15 @@ pub struct Metric {
     pub offset: f64,
     #[serde(default)]
     pub unit: String,
+    /// SPI-only: command bytes to transmit (TX buffer).
+    #[serde(default)]
+    pub command: Vec<u8>,
+    /// SPI-only: total response bytes. Defaults to command length (full-duplex).
+    #[serde(default)]
+    pub response_length: Option<u16>,
+    /// SPI-only: skip first N bytes of response before decoding.
+    #[serde(default)]
+    pub response_offset: u16,
 }
 
 fn default_byte_order() -> ByteOrder {
@@ -361,6 +387,16 @@ impl DataType {
             DataType::U8 | DataType::U16 | DataType::I16 | DataType::Bool => 1,
             DataType::U32 | DataType::I32 | DataType::F32 => 2,
             DataType::U64 | DataType::I64 | DataType::F64 => 4,
+        }
+    }
+
+    /// Returns the number of raw bytes this data type occupies.
+    pub fn byte_size(self) -> usize {
+        match self {
+            DataType::Bool | DataType::U8 => 1,
+            DataType::U16 | DataType::I16 => 2,
+            DataType::U32 | DataType::I32 | DataType::F32 => 4,
+            DataType::U64 | DataType::I64 | DataType::F64 => 8,
         }
     }
 }
@@ -416,6 +452,12 @@ pub struct RawMetric {
     pub scale: Option<f64>,
     pub offset: Option<f64>,
     pub unit: Option<String>,
+    #[serde(default)]
+    pub command: Vec<u8>,
+    #[serde(default)]
+    pub response_length: Option<u16>,
+    #[serde(default)]
+    pub response_offset: u16,
 }
 
 impl RawMetric {
@@ -442,12 +484,7 @@ impl RawMetric {
             .register_type
             .or_else(|| d.and_then(|d| d.register_type));
 
-        let address = self.address.with_context(|| {
-            format!(
-                "collector '{}': metric '{}' in '{}': missing required field 'address'",
-                collector_name, self.name, file_path
-            )
-        })?;
+        let address = self.address;
 
         let data_type = self
             .data_type
@@ -485,6 +522,9 @@ impl RawMetric {
                 .unit
                 .or_else(|| d.and_then(|d| d.unit.clone()))
                 .unwrap_or_default(),
+            command: self.command,
+            response_length: self.response_length,
+            response_offset: self.response_offset,
         })
     }
 }
@@ -630,11 +670,7 @@ impl Config {
                     // slave_id required for Modbus
                     match c.slave_id {
                         Some(id) if id == 0 || id > 247 => {
-                            bail!(
-                                "collector '{}': slave_id must be 1-247, got {}",
-                                c.name,
-                                id
-                            );
+                            bail!("collector '{}': slave_id must be 1-247, got {}", c.name, id);
                         }
                         None => {
                             bail!(
@@ -663,11 +699,7 @@ impl Config {
                     // slave_id required for Modbus
                     match c.slave_id {
                         Some(id) if id == 0 || id > 247 => {
-                            bail!(
-                                "collector '{}': slave_id must be 1-247, got {}",
-                                c.name,
-                                id
-                            );
+                            bail!("collector '{}': slave_id must be 1-247, got {}", c.name, id);
                         }
                         None => {
                             bail!(
@@ -694,16 +726,36 @@ impl Config {
                 }
                 Protocol::I2c { bus, address } => {
                     if bus.is_empty() {
-                        bail!(
-                            "collector '{}': I2C bus path must not be empty",
-                            c.name
-                        );
+                        bail!("collector '{}': I2C bus path must not be empty", c.name);
                     }
                     if *address < 0x03 || *address > 0x77 {
                         bail!(
                             "collector '{}': I2C address must be 0x03-0x77, got {:#04x}",
                             c.name,
                             address
+                        );
+                    }
+                }
+                Protocol::Spi {
+                    device,
+                    speed_hz,
+                    mode,
+                    bits_per_word,
+                } => {
+                    if device.is_empty() {
+                        bail!("collector '{}': SPI device path must not be empty", c.name);
+                    }
+                    if *speed_hz == 0 {
+                        bail!("collector '{}': SPI speed_hz must be > 0", c.name);
+                    }
+                    if *mode > 3 {
+                        bail!("collector '{}': SPI mode must be 0-3, got {}", c.name, mode);
+                    }
+                    if *bits_per_word == 0 || *bits_per_word > 32 {
+                        bail!(
+                            "collector '{}': SPI bits_per_word must be 1-32, got {}",
+                            c.name,
+                            bits_per_word
                         );
                     }
                 }
@@ -720,9 +772,20 @@ impl Config {
                 bail!("collector '{}': at least one metric required", c.name);
             }
             let is_i2c = matches!(c.protocol, Protocol::I2c { .. });
+            let is_spi = matches!(c.protocol, Protocol::Spi { .. });
+            let is_modbus = !is_i2c && !is_spi;
             for m in &c.metrics {
+                // Address is required for Modbus and I2C protocols
+                if !is_spi && m.address.is_none() {
+                    bail!(
+                        "collector '{}', metric '{}': address is required for {} protocol",
+                        c.name,
+                        m.name,
+                        if is_i2c { "I2C" } else { "Modbus" }
+                    );
+                }
                 // Modbus-specific validations
-                if !is_i2c {
+                if is_modbus {
                     let register_type = m.register_type.unwrap_or(RegisterType::Holding);
                     if (register_type == RegisterType::Coil
                         || register_type == RegisterType::Discrete)
@@ -773,20 +836,56 @@ impl Config {
                 // I2C-specific validations
                 if is_i2c {
                     // Validate metric address fits in u8 (I2C register addresses are 8-bit)
-                    if m.address > 0xFF {
+                    if m.address.unwrap() > 0xFF {
                         bail!(
                             "collector '{}', metric '{}': I2C register address {:#06x} exceeds u8 range (max 0xFF)",
                             c.name,
                             m.name,
-                            m.address
+                            m.address.unwrap()
                         );
                     }
                     // Mid-endian byte orders are Modbus-specific (word-swapped)
-                    if matches!(m.byte_order, ByteOrder::MidBigEndian | ByteOrder::MidLittleEndian) {
+                    if matches!(
+                        m.byte_order,
+                        ByteOrder::MidBigEndian | ByteOrder::MidLittleEndian
+                    ) {
                         bail!(
                             "collector '{}', metric '{}': mid-endian byte order is not supported for I2C (Modbus-specific)",
                             c.name,
                             m.name
+                        );
+                    }
+                }
+                // SPI-specific validations
+                if is_spi {
+                    if m.command.is_empty() {
+                        bail!(
+                            "collector '{}', metric '{}': command is required for SPI metrics",
+                            c.name,
+                            m.name
+                        );
+                    }
+                    // Mid-endian byte orders are Modbus-specific
+                    if matches!(
+                        m.byte_order,
+                        ByteOrder::MidBigEndian | ByteOrder::MidLittleEndian
+                    ) {
+                        bail!(
+                            "collector '{}', metric '{}': mid-endian byte order is not supported for SPI (Modbus-specific)",
+                            c.name,
+                            m.name
+                        );
+                    }
+                    let resp_len = m.response_length.unwrap_or(m.command.len() as u16);
+                    let data_bytes = m.data_type.byte_size() as u16;
+                    if m.response_offset + data_bytes > resp_len {
+                        bail!(
+                            "collector '{}', metric '{}': response_offset ({}) + data_type bytes ({}) exceeds response_length ({})",
+                            c.name,
+                            m.name,
+                            m.response_offset,
+                            data_bytes,
+                            resp_len
                         );
                     }
                 }
@@ -806,21 +905,24 @@ impl Config {
                     );
                 }
                 // Validate multi-register address overflow (Modbus only)
-                if !is_i2c {
+                if is_modbus {
                     let reg_count = m.data_type.register_count();
-                    if m.address as u32 + reg_count as u32 > 65536 {
+                    if m.address.unwrap() as u32 + reg_count as u32 > 65536 {
                         bail!(
                             "collector '{}', metric '{}': address {} + {} registers exceeds 65535",
                             c.name,
                             m.name,
-                            m.address,
+                            m.address.unwrap(),
                             reg_count
                         );
                     }
                 }
                 // Warn if byte_order is set to non-default for single-register types
                 // (byte_order is meaningless for u16/i16/bool which occupy only 1 register)
-                if !is_i2c && m.data_type.register_count() == 1 && m.byte_order != ByteOrder::BigEndian {
+                if is_modbus
+                    && m.data_type.register_count() == 1
+                    && m.byte_order != ByteOrder::BigEndian
+                {
                     eprintln!(
                         "warning: collector '{}', metric '{}': byte_order has no effect for single-register type {:?}",
                         c.name, m.name, m.data_type

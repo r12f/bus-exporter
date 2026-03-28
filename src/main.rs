@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+mod bus;
 mod collector;
 mod config;
 mod decoder;
@@ -8,6 +9,7 @@ mod internal_metrics;
 mod logging;
 mod metrics;
 mod modbus;
+mod spi;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -29,11 +31,14 @@ use modbus::{rtu::RtuClient, tcp::TcpClient};
 struct RealBusClientFactory;
 
 impl BusClientFactory for RealBusClientFactory {
-    fn create(&self, collector: &config::Collector) -> BusClient {
+    fn create(&self, collector: &config::Collector) -> Result<BusClient> {
         match &collector.protocol {
             Protocol::ModbusTcp { endpoint } => {
                 let slave_id = collector.slave_id.unwrap_or(1);
-                BusClient::Modbus(Box::new(TcpClient::new(endpoint.clone(), slave_id)))
+                Ok(BusClient::Modbus(Box::new(TcpClient::new(
+                    endpoint.clone(),
+                    slave_id,
+                ))))
             }
             Protocol::ModbusRtu {
                 device,
@@ -59,14 +64,16 @@ impl BusClientFactory for RealBusClientFactory {
                         config::Parity::Even => tokio_serial::Parity::Even,
                         config::Parity::Odd => tokio_serial::Parity::Odd,
                     });
-                BusClient::Modbus(Box::new(RtuClient::new(builder, slave_id)))
+                Ok(BusClient::Modbus(Box::new(RtuClient::new(
+                    builder, slave_id,
+                ))))
             }
             Protocol::I2c { bus, address } => {
                 // Use real LinuxI2cDevice on Linux, StubI2cDevice otherwise
                 #[cfg(target_os = "linux")]
                 let device: Box<dyn i2c::I2cDevice> = {
                     let mut dev = i2c::linux_device::LinuxI2cDevice::new(bus.clone(), *address);
-                    dev.open().expect("failed to open I2C device");
+                    dev.open().context("failed to open I2C device")?;
                     Box::new(dev)
                 };
                 #[cfg(not(target_os = "linux"))]
@@ -75,7 +82,34 @@ impl BusClientFactory for RealBusClientFactory {
                 let client = i2c::I2cClient::new(device, bus.clone(), *address);
                 // Use shared per-bus lock via get_bus_lock
                 let bus_lock = i2c::get_bus_lock(bus);
-                BusClient::I2c { client, bus_lock }
+                Ok(BusClient::I2c { client, bus_lock })
+            }
+            Protocol::Spi {
+                device,
+                speed_hz,
+                mode,
+                bits_per_word,
+            } => {
+                #[cfg(target_os = "linux")]
+                let spi_device: Box<dyn spi::SpiDevice> = {
+                    let mut dev = spi::linux_device::LinuxSpiDevice::new(
+                        device.clone(),
+                        *speed_hz,
+                        *mode,
+                        *bits_per_word,
+                    );
+                    dev.open().context("failed to open SPI device")?;
+                    Box::new(dev)
+                };
+                #[cfg(not(target_os = "linux"))]
+                let spi_device: Box<dyn spi::SpiDevice> = Box::new(spi::StubSpiDevice);
+
+                let client = spi::SpiClient::new(spi_device, device.clone());
+                let device_lock = spi::get_device_lock(device);
+                Ok(BusClient::Spi {
+                    client,
+                    device_lock,
+                })
             }
         }
     }

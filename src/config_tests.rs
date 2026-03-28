@@ -226,7 +226,7 @@ collectors:
     assert_eq!(metrics[0].name, "d");
     // Last entry wins: counter at address 1
     assert_eq!(metrics[0].metric_type, crate::config::MetricType::Counter);
-    assert_eq!(metrics[0].address, 1);
+    assert_eq!(metrics[0].address, Some(1));
 }
 
 #[test]
@@ -766,7 +766,7 @@ collectors:
         .find(|m| m.name == "voltage")
         .unwrap();
     assert_eq!(v.register_type, Some(RegisterType::Input));
-    assert_eq!(v.address, 100);
+    assert_eq!(v.address, Some(100));
     // description should be empty (full replacement, not inherited)
     assert_eq!(v.description, "");
     // current from base.yaml
@@ -775,7 +775,7 @@ collectors:
         .iter()
         .find(|m| m.name == "current")
         .unwrap();
-    assert_eq!(c.address, 6);
+    assert_eq!(c.address, Some(6));
 }
 
 #[test]
@@ -816,7 +816,7 @@ collectors:
     let v = &config.collectors[0].metrics[0];
     assert_eq!(v.register_type, Some(RegisterType::Input));
     assert_eq!(v.data_type, DataType::U16);
-    assert_eq!(v.address, 200);
+    assert_eq!(v.address, Some(200));
 }
 
 #[test]

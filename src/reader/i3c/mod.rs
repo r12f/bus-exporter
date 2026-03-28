@@ -121,9 +121,12 @@ pub mod linux_device {
     }
 }
 
-/// Stub I3C device (placeholder — real device is platform-specific).
+/// Stub I3C device (placeholder for non-Linux platforms where no real hardware is available).
+/// Only compiled on non-Linux targets (Linux uses `LinuxI3cDevice`).
+#[cfg(not(target_os = "linux"))]
 pub struct StubI3cDevice;
 
+#[cfg(not(target_os = "linux"))]
 impl I3cDevice for StubI3cDevice {
     fn write_read(&mut self, _address: u8, _write_buf: &[u8], _read_len: usize) -> Result<Vec<u8>> {
         anyhow::bail!("StubI3cDevice: no real I3C hardware available")

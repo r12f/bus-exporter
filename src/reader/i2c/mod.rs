@@ -84,9 +84,12 @@ pub mod linux_device {
     }
 }
 
-/// Stub I2C device (placeholder — real device is platform-specific).
+/// Stub I2C device (placeholder for non-Linux platforms where no real hardware is available).
+/// Only compiled on non-Linux targets (Linux uses `LinuxI2cDevice`).
+#[cfg(not(target_os = "linux"))]
 pub struct StubI2cDevice;
 
+#[cfg(not(target_os = "linux"))]
 impl I2cDevice for StubI2cDevice {
     fn write_read(&mut self, _write_buf: &[u8], _read_len: usize) -> Result<Vec<u8>> {
         anyhow::bail!("StubI2cDevice: no real I2C hardware available")

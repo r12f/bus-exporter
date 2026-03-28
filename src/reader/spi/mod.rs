@@ -86,8 +86,11 @@ pub mod linux_device {
 }
 
 /// Stub SPI device for non-Linux platforms.
+/// Only compiled on non-Linux targets (Linux uses `LinuxSpiDevice`).
+#[cfg(not(target_os = "linux"))]
 pub struct StubSpiDevice;
 
+#[cfg(not(target_os = "linux"))]
 impl SpiDevice for StubSpiDevice {
     fn transfer(&mut self, _tx_buf: &[u8]) -> Result<Vec<u8>> {
         anyhow::bail!("StubSpiDevice: no real SPI hardware available")

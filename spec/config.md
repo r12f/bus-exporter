@@ -267,7 +267,7 @@ logging:
 
 ## Scale Formula
 
-```
+```text
 output_value = raw_value * scale + offset
 ```
 

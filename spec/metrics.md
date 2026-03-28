@@ -8,7 +8,7 @@ The metric store holds the latest values for all metrics and serves as the share
 
 The metric store is a **read-only aggregation view** of all per-collector caches. Collectors are the sole producers; exporters are pure consumers. No exporter ever triggers a Modbus call.
 
-```
+```text
 Collectors (producers)          MetricStore           Exporters (consumers)
 ┌──────────┐                  ┌─────────────┐        ┌──────────────┐
 │Collector 1│──publish()─────▶│             │◀──read──│ OTLP         │

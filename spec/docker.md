@@ -47,6 +47,7 @@ docker buildx build \
 ## Health Check
 
 - If Prometheus exporter is enabled, use it as a health check:
+
   ```dockerfile
   HEALTHCHECK CMD wget -q -O /dev/null http://localhost:9090/metrics || exit 1
   ```

@@ -29,6 +29,7 @@ Exports metrics to an OpenTelemetry Collector via OTLP protobuf over HTTP (POST 
 | Counter | Sum | Cumulative, monotonic |
 
 Each data point includes:
+
 - `time_unix_nano`: timestamp of last poll
 - `attributes`: merged labels
 - `value`: as double

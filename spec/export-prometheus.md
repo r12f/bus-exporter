@@ -36,7 +36,8 @@ An HTTP server (using `axum`) serves a Prometheus-compatible `/metrics` endpoint
 ## HELP and TYPE
 
 Each metric includes:
-```
+
+```text
 # HELP bus_voltage_phase_a_volts Phase A voltage
 # TYPE bus_voltage_phase_a_volts gauge
 bus_voltage_phase_a_volts{collector="power-meter-01",building="A",floor="2"} 23.1

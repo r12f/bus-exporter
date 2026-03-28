@@ -79,6 +79,7 @@ This auto-generates release notes from merged PRs since the last tag.
 ### Job Order
 
 All steps run in a single job (sequential):
+
 1. Checkout → version bump → commit + tag + push
 2. `cargo publish` (crates.io)
 3. Docker build + push (multi-arch)

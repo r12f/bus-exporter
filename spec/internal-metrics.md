@@ -78,7 +78,7 @@ pub struct CollectorStats {
 
 Internal metrics are appended after all device metrics in the `/metrics` response, separated by a blank line:
 
-```
+```text
 # HELP bus_exporter_collectors_total Total number of configured collectors
 # TYPE bus_exporter_collectors_total gauge
 bus_exporter_collectors_total 3

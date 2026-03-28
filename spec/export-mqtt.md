@@ -6,7 +6,7 @@ The MQTT exporter publishes metric values to an MQTT broker. Each metric is publ
 
 ## Topic Structure
 
-```
+```text
 <topic_prefix>/<collector_name>/<metric_name>
 ```
 
@@ -14,7 +14,7 @@ Example: `modbus/metrics/power-meter-01/voltage_phase_a`
 
 ### Status Topic
 
-```
+```text
 <topic_prefix>/status
 ```
 
@@ -24,7 +24,7 @@ Publishes `online` on connect, `offline` as Last Will & Testament (LWT) on unexp
 
 Plain value as UTF-8 string:
 
-```
+```text
 230.5
 ```
 

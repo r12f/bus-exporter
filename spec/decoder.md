@@ -35,7 +35,7 @@ Note: For single-register types (`u16`, `i16`), byte order is ignored (Modbus de
 
 After type conversion to `f64`:
 
-```
+```text
 output = raw_value * scale + offset
 ```
 

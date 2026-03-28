@@ -2,7 +2,7 @@
 
 ## Planned File Tree
 
-```
+```text
 bus-exporter/
 ├── .github/
 │   └── workflows/
@@ -68,7 +68,7 @@ bus-exporter/
 
 ## Module Dependency Graph
 
-```
+```text
 main
 ├── config
 ├── logging

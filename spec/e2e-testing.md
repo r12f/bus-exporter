@@ -8,7 +8,7 @@
 
 ## Architecture
 
-```
+```text
 oitc/modbus-server (simulator) → bus-exporter → Prometheus /metrics → test assertions
 ```
 
@@ -71,7 +71,7 @@ The test script (`tests/e2e/run.sh`) performs the following steps:
 
 ```makefile
 e2e:  ## Run E2E tests with docker-compose
-	bash tests/e2e/run.sh
+    bash tests/e2e/run.sh
 ```
 
 ## CI Integration

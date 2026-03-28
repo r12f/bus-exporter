@@ -516,7 +516,7 @@ collectors:
     assert!(parse(y)
         .unwrap_err()
         .to_string()
-        .contains("polling_interval must be at least 100ms"));
+        .contains("polling_interval must be at least 1ms"));
 }
 
 #[test]
@@ -528,18 +528,18 @@ collectors:
   - name: t
     protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
-    polling_interval: "50ms"
+    polling_interval: "0ms"
     metrics:
       - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
 "#;
     assert!(parse(y)
         .unwrap_err()
         .to_string()
-        .contains("polling_interval must be at least 100ms"));
+        .contains("polling_interval must be at least 1ms"));
 }
 
 #[test]
-fn test_polling_interval_100ms_ok() {
+fn test_polling_interval_1ms_ok() {
     let y = r#"
 exporters:
   prometheus: { enabled: true }
@@ -547,7 +547,7 @@ collectors:
   - name: t
     protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
-    polling_interval: "100ms"
+    polling_interval: "1ms"
     metrics:
       - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
 "#;

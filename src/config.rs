@@ -630,10 +630,10 @@ impl Config {
                     c.slave_id
                 );
             }
-            // Validate polling_interval minimum (100ms)
-            if c.polling_interval.as_millis() < 100 {
+            // Validate polling_interval minimum (1ms)
+            if c.polling_interval.as_millis() < 1 {
                 bail!(
-                    "collector '{}': polling_interval must be at least 100ms, got {:?}",
+                    "collector '{}': polling_interval must be at least 1ms, got {:?}",
                     c.name,
                     c.polling_interval
                 );

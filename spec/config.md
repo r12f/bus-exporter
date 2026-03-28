@@ -313,7 +313,7 @@ logging:
 11. All `metrics_files` paths must exist and be readable.
 12. Each metrics file must contain a valid `metrics` list with at least one entry.
 13. After merge, all required fields (`name`, `type`, `register_type`, `address`, `data_type`) must be present on every metric. Missing required fields from partial overrides are a validation error.
-14. `polling_interval` must be ≥ 100ms.
+14. `polling_interval` must be ≥ 1ms.
 15. `scale` must not be zero.
 16. `counter` metric type is not compatible with `coil`/`discrete` register types or `bool` data type (counters must be numeric).
 17. `data_type: u8` is only valid for I2C and SPI collectors (Modbus registers are 16-bit minimum).

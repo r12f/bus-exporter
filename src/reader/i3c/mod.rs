@@ -175,7 +175,7 @@ pub enum AddressMode {
 
 /// I3C client that wraps a device and provides async read operations.
 ///
-/// Unlike `I2cClient`, the I3C client requires `&mut self` for reads because
+/// Unlike `I2cMetricReader`, the I3C client requires `&mut self` for reads because
 /// dynamic address resolution may need to mutate cached state (e.g. after
 /// NACK-triggered re-enumeration). The client is therefore wrapped in
 /// `Arc<tokio::sync::Mutex<..>>` at the call site.

@@ -12,7 +12,7 @@ use crate::config::{self, RegisterType};
 use crate::decoder;
 use crate::internal_metrics::InternalMetrics;
 use crate::metrics::{MetricStore, MetricType, MetricValue};
-use crate::reader::i2c::{self, I2cClient};
+use crate::reader::i2c::{self, I2cMetricReader};
 use crate::reader::i3c;
 use crate::reader::modbus::batch::{batch_read_coalesced, BatchReadResult};
 use crate::reader::modbus::{BusConnection, ModbusClient};
@@ -37,7 +37,7 @@ fn map_metric_type(mt: config::MetricType) -> MetricType {
 pub enum BusClient {
     Modbus(Box<dyn ModbusClient>),
     I2c {
-        client: I2cClient,
+        client: I2cMetricReader,
         bus_lock: i2c::BusLock,
     },
     Spi {

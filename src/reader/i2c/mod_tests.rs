@@ -61,7 +61,7 @@ async fn test_read_u8() {
     let mut responses = HashMap::new();
     responses.insert(0xFA, vec![0x2A]);
     let device = MockI2cDevice::new(responses);
-    let client = I2cClient::new(Box::new(device), "/dev/i2c-1".into(), 0x76);
+    let client = I2cMetricReader::new(Box::new(device), "/dev/i2c-1".into(), 0x76);
 
     let metric = make_metric("temp", 0xFA, DataType::U8);
     let bus_lock = make_bus_lock();
@@ -74,7 +74,7 @@ async fn test_read_u16_big_endian() {
     let mut responses = HashMap::new();
     responses.insert(0xFA, vec![0x01, 0x00]); // 256 in big endian
     let device = MockI2cDevice::new(responses);
-    let client = I2cClient::new(Box::new(device), "/dev/i2c-1".into(), 0x76);
+    let client = I2cMetricReader::new(Box::new(device), "/dev/i2c-1".into(), 0x76);
 
     let metric = make_metric("temp", 0xFA, DataType::U16);
     let bus_lock = make_bus_lock();
@@ -87,7 +87,7 @@ async fn test_read_bool() {
     let mut responses = HashMap::new();
     responses.insert(0x10, vec![0x03]); // bit 0 set
     let device = MockI2cDevice::new(responses);
-    let client = I2cClient::new(Box::new(device), "/dev/i2c-1".into(), 0x48);
+    let client = I2cMetricReader::new(Box::new(device), "/dev/i2c-1".into(), 0x48);
 
     let metric = make_metric("flag", 0x10, DataType::Bool);
     let bus_lock = make_bus_lock();
@@ -100,7 +100,7 @@ async fn test_read_with_scale_offset() {
     let mut responses = HashMap::new();
     responses.insert(0xFA, vec![0x00, 0x64]); // 100 in big endian u16
     let device = MockI2cDevice::new(responses);
-    let client = I2cClient::new(Box::new(device), "/dev/i2c-1".into(), 0x76);
+    let client = I2cMetricReader::new(Box::new(device), "/dev/i2c-1".into(), 0x76);
 
     let mut metric = make_metric("temp", 0xFA, DataType::U16);
     metric.scale = 0.01;
@@ -116,7 +116,7 @@ async fn test_read_with_scale_offset() {
 async fn test_read_register_not_found() {
     let responses = HashMap::new(); // empty
     let device = MockI2cDevice::new(responses);
-    let client = I2cClient::new(Box::new(device), "/dev/i2c-1".into(), 0x76);
+    let client = I2cMetricReader::new(Box::new(device), "/dev/i2c-1".into(), 0x76);
 
     let metric = make_metric("temp", 0xFA, DataType::U8);
     let bus_lock = make_bus_lock();
@@ -143,7 +143,7 @@ async fn test_read_f32() {
     let mut responses = HashMap::new();
     responses.insert(0x20, bytes.to_vec());
     let device = MockI2cDevice::new(responses);
-    let client = I2cClient::new(Box::new(device), "/dev/i2c-1".into(), 0x50);
+    let client = I2cMetricReader::new(Box::new(device), "/dev/i2c-1".into(), 0x50);
 
     let metric = make_metric("pressure", 0x20, DataType::F32);
     let bus_lock = make_bus_lock();

@@ -78,7 +78,7 @@ impl BusClientFactory for RealBusClientFactory {
                 #[cfg(not(target_os = "linux"))]
                 let device: Box<dyn reader::i2c::I2cDevice> = Box::new(reader::i2c::StubI2cDevice);
 
-                let client = reader::i2c::I2cClient::new(device, bus.clone(), *address);
+                let client = reader::i2c::I2cMetricReader::new(device, bus.clone(), *address);
                 // Use shared per-bus lock via get_bus_lock
                 let bus_lock = reader::i2c::get_bus_lock(bus);
                 Ok(BusClient::I2c { client, bus_lock })

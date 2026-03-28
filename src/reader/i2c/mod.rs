@@ -96,8 +96,8 @@ impl I2cDevice for StubI2cDevice {
     }
 }
 
-/// I2C client that wraps a device and provides async read operations.
-pub struct I2cClient {
+/// I2C metric reader that wraps a device and provides async read operations.
+pub struct I2cMetricReader {
     device: Arc<std::sync::Mutex<Box<dyn I2cDevice>>>,
     bus_path: String,
     address: u8,
@@ -116,7 +116,7 @@ pub fn get_bus_lock(bus_path: &str) -> BusLock {
         .clone()
 }
 
-impl I2cClient {
+impl I2cMetricReader {
     pub fn new(device: Box<dyn I2cDevice>, bus_path: String, address: u8) -> Self {
         Self {
             device: Arc::new(std::sync::Mutex::new(device)),
@@ -138,7 +138,7 @@ impl I2cClient {
 
 /// Read a single I2C metric.
 pub async fn read_i2c_metric(
-    client: &I2cClient,
+    client: &I2cMetricReader,
     metric: &config::MetricConfig,
     bus_lock: &BusLock,
 ) -> Result<f64> {
@@ -179,9 +179,9 @@ pub async fn read_i2c_metric(
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-/// Connection/lifecycle trait impl for I2cClient (mirrors BusConnection).
+/// Connection/lifecycle trait impl for I2cMetricReader (mirrors BusConnection).
 #[async_trait]
-impl crate::reader::modbus::BusConnection for I2cClient {
+impl crate::reader::modbus::BusConnection for I2cMetricReader {
     async fn connect(&mut self) -> Result<()> {
         self.connected = true;
         Ok(())

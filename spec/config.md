@@ -105,14 +105,14 @@ A collector must have at least one metric after merging `metrics_files` and `met
 
 ### Protocol
 
-#### TCP
+#### Modbus TCP
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `type` | `string` | Yes | — | Must be `"modbus-tcp"` |
 | `endpoint` | `string` | Yes | — | `host:port` |
 
-#### RTU
+#### Modbus RTU
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|

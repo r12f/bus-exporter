@@ -6,6 +6,10 @@
 
 `MetricReader` is the common trait for all protocol readers. The collector uses it to read metrics from devices — it doesn't need to know the underlying protocol.
 
+## Ownership Model
+
+Each collector owns exactly one `MetricReader` instance. Readers are not shared across collectors — there is no concurrent access to a single reader. The collector calls `read()` or `batch_read()` sequentially within its polling loop, so `&mut self` is the correct receiver.
+
 ## Trait
 
 ```rust
@@ -23,14 +27,18 @@ pub trait MetricReader: Send + Sync {
     /// Whether the reader is connected.
     fn is_connected(&self) -> bool;
 
-    /// Read a single metric.
+    /// Read a single metric. Returns the decoded value.
     async fn read(&mut self, metric: &MetricConfig) -> Result<f64>;
 
-    /// Batch read. Default implementation calls read() per metric.
-    async fn batch_read(&mut self, metrics: &[MetricConfig]) -> HashMap<String, Result<f64>> {
-        let mut results = HashMap::new();
+    /// Batch read. Returns results in the same order as the input slice.
+    /// Default implementation calls read() per metric.
+    async fn batch_read(
+        &mut self,
+        metrics: &[MetricConfig],
+    ) -> Vec<(&MetricConfig, Result<f64>)> {
+        let mut results = Vec::with_capacity(metrics.len());
         for m in metrics {
-            results.insert(m.name.clone(), self.read(m).await);
+            results.push((m, self.read(m).await));
         }
         results
     }
@@ -40,6 +48,8 @@ pub struct ReaderCapabilities {
     pub batch_read: bool,
 }
 ```
+
+**Error handling:** `Result` uses `anyhow::Result` — the collector logs errors and updates internal metrics (error counters). Transient errors (connection lost, timeout) trigger reconnect; permanent errors (invalid config) are logged once.
 
 ## Capabilities
 
@@ -93,4 +103,4 @@ src/reader/
 
 Renamed from previous layout: `src/modbus/`, `src/i2c/`, `src/spi/`, `src/i3c/` → `src/reader/*`.
 
-`src/export/` → `src/exporter/` (separate change, same PR).
+The `src/export/` → `src/exporter/` rename is a separate structural change done in the same implementation PR.

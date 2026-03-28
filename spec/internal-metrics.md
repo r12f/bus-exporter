@@ -8,7 +8,7 @@ Internal metrics are exported through the same channels as device metrics — bo
 
 ## Metric Prefix
 
-All internal metrics use the prefix `modbus_exporter_` to distinguish them from device metrics (which use `modbus_`).
+All internal metrics use the prefix `bus_exporter_` to distinguish them from device metrics (which use `bus_`).
 
 ## Internal Metrics
 
@@ -16,27 +16,27 @@ All internal metrics use the prefix `modbus_exporter_` to distinguish them from 
 
 | Metric Name | Type | Labels | Description |
 |---|---|---|---|
-| `modbus_exporter_collectors_total` | Gauge | — | Total number of configured collectors |
-| `modbus_exporter_polls_total` | Counter | `collector` | Total number of poll cycles executed per collector |
-| `modbus_exporter_polls_success_total` | Counter | `collector` | Number of fully successful poll cycles (all metrics read) |
-| `modbus_exporter_polls_error_total` | Counter | `collector` | Number of poll cycles with at least one metric read failure |
-| `modbus_exporter_modbus_requests_total` | Counter | `collector` | Total number of individual Modbus register read requests |
-| `modbus_exporter_modbus_errors_total` | Counter | `collector` | Total number of failed Modbus register read requests |
-| `modbus_exporter_poll_duration_seconds` | Gauge | `collector` | Duration of the last poll cycle in seconds |
+| `bus_exporter_collectors_total` | Gauge | — | Total number of configured collectors |
+| `bus_exporter_polls_total` | Counter | `collector` | Total number of poll cycles executed per collector |
+| `bus_exporter_polls_success_total` | Counter | `collector` | Number of fully successful poll cycles (all metrics read) |
+| `bus_exporter_polls_error_total` | Counter | `collector` | Number of poll cycles with at least one metric read failure |
+| `bus_exporter_modbus_requests_total` | Counter | `collector` | Total number of individual Modbus register read requests |
+| `bus_exporter_modbus_errors_total` | Counter | `collector` | Total number of failed Modbus register read requests |
+| `bus_exporter_poll_duration_seconds` | Gauge | `collector` | Duration of the last poll cycle in seconds |
 
 ### Export Metrics
 
 | Metric Name | Type | Labels | Description |
 |---|---|---|---|
-| `modbus_exporter_otlp_exports_total` | Counter | — | Total number of OTLP export attempts |
-| `modbus_exporter_otlp_errors_total` | Counter | — | Total number of failed OTLP exports |
-| `modbus_exporter_prometheus_scrapes_total` | Counter | — | Total number of Prometheus scrape requests served |
+| `bus_exporter_otlp_exports_total` | Counter | — | Total number of OTLP export attempts |
+| `bus_exporter_otlp_errors_total` | Counter | — | Total number of failed OTLP exports |
+| `bus_exporter_prometheus_scrapes_total` | Counter | — | Total number of Prometheus scrape requests served |
 
 ### Uptime
 
 | Metric Name | Type | Labels | Description |
 |---|---|---|---|
-| `modbus_exporter_uptime_seconds` | Gauge | — | Seconds since the exporter process started |
+| `bus_exporter_uptime_seconds` | Gauge | — | Seconds since the exporter process started |
 
 ## Implementation
 
@@ -79,23 +79,23 @@ pub struct CollectorStats {
 Internal metrics are appended after all device metrics in the `/metrics` response, separated by a blank line:
 
 ```
-# HELP modbus_exporter_collectors_total Total number of configured collectors
-# TYPE modbus_exporter_collectors_total gauge
-modbus_exporter_collectors_total 3
+# HELP bus_exporter_collectors_total Total number of configured collectors
+# TYPE bus_exporter_collectors_total gauge
+bus_exporter_collectors_total 3
 
-# HELP modbus_exporter_polls_total Total poll cycles per collector
-# TYPE modbus_exporter_polls_total counter
-modbus_exporter_polls_total{collector="meter_1"} 42
-modbus_exporter_polls_total{collector="meter_2"} 40
+# HELP bus_exporter_polls_total Total poll cycles per collector
+# TYPE bus_exporter_polls_total counter
+bus_exporter_polls_total{collector="meter_1"} 42
+bus_exporter_polls_total{collector="meter_2"} 40
 
-# HELP modbus_exporter_uptime_seconds Seconds since exporter started
-# TYPE modbus_exporter_uptime_seconds gauge
-modbus_exporter_uptime_seconds 3600.5
+# HELP bus_exporter_uptime_seconds Seconds since exporter started
+# TYPE bus_exporter_uptime_seconds gauge
+bus_exporter_uptime_seconds 3600.5
 ```
 
 ### OTLP Output
 
-Internal metrics are sent as a separate `ScopeMetrics` with scope name `modbus-exporter-internal` within the same OTLP export request. They follow the same encoding (protobuf) and export schedule as device metrics.
+Internal metrics are sent as a separate `ScopeMetrics` with scope name `bus-exporter-internal` within the same OTLP export request. They follow the same encoding (protobuf) and export schedule as device metrics.
 
 ## Configuration
 
@@ -106,4 +106,4 @@ Internal metrics are always enabled — no configuration toggle. They have negli
 - Unit test: verify `InternalMetrics` counters increment correctly.
 - Unit test: verify Prometheus output includes internal metrics with correct names, types, and labels.
 - Integration test: verify internal metrics appear alongside device metrics.
-- E2E test: add assertions for `modbus_exporter_collectors_total` and `modbus_exporter_uptime_seconds` in the E2E test script.
+- E2E test: add assertions for `bus_exporter_collectors_total` and `bus_exporter_uptime_seconds` in the E2E test script.

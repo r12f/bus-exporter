@@ -103,19 +103,19 @@ impl InternalMetrics {
 
         // collectors_total
         buf.push_str(
-            "# HELP modbus_exporter_collectors_total Total number of configured collectors\n",
+            "# HELP bus_exporter_collectors_total Total number of configured collectors\n",
         );
-        buf.push_str("# TYPE modbus_exporter_collectors_total gauge\n");
+        buf.push_str("# TYPE bus_exporter_collectors_total gauge\n");
         buf.push_str(&format!(
-            "modbus_exporter_collectors_total {}\n",
+            "bus_exporter_collectors_total {}\n",
             self.collectors_total.load(ORD)
         ));
 
         // uptime_seconds
-        buf.push_str("# HELP modbus_exporter_uptime_seconds Seconds since exporter started\n");
-        buf.push_str("# TYPE modbus_exporter_uptime_seconds gauge\n");
+        buf.push_str("# HELP bus_exporter_uptime_seconds Seconds since exporter started\n");
+        buf.push_str("# TYPE bus_exporter_uptime_seconds gauge\n");
         buf.push_str(&format!(
-            "modbus_exporter_uptime_seconds {:.1}\n",
+            "bus_exporter_uptime_seconds {:.1}\n",
             self.uptime_seconds()
         ));
 
@@ -131,71 +131,71 @@ impl InternalMetrics {
         };
 
         if !collectors.is_empty() {
-            buf.push_str("# HELP modbus_exporter_polls_total Total poll cycles per collector\n");
-            buf.push_str("# TYPE modbus_exporter_polls_total counter\n");
+            buf.push_str("# HELP bus_exporter_polls_total Total poll cycles per collector\n");
+            buf.push_str("# TYPE bus_exporter_polls_total counter\n");
             for c in &collectors {
                 if let Some(s) = self.collector_stats.get(c) {
                     buf.push_str(&format!(
-                        "modbus_exporter_polls_total{{collector=\"{c}\"}} {}\n",
+                        "bus_exporter_polls_total{{collector=\"{c}\"}} {}\n",
                         s.polls_total.load(ORD)
                     ));
                 }
             }
 
             buf.push_str(
-                "# HELP modbus_exporter_polls_success_total Successful poll cycles per collector\n",
+                "# HELP bus_exporter_polls_success_total Successful poll cycles per collector\n",
             );
-            buf.push_str("# TYPE modbus_exporter_polls_success_total counter\n");
+            buf.push_str("# TYPE bus_exporter_polls_success_total counter\n");
             for c in &collectors {
                 if let Some(s) = self.collector_stats.get(c) {
                     buf.push_str(&format!(
-                        "modbus_exporter_polls_success_total{{collector=\"{c}\"}} {}\n",
+                        "bus_exporter_polls_success_total{{collector=\"{c}\"}} {}\n",
                         s.polls_success.load(ORD)
                     ));
                 }
             }
 
             buf.push_str(
-                "# HELP modbus_exporter_polls_error_total Poll cycles with errors per collector\n",
+                "# HELP bus_exporter_polls_error_total Poll cycles with errors per collector\n",
             );
-            buf.push_str("# TYPE modbus_exporter_polls_error_total counter\n");
+            buf.push_str("# TYPE bus_exporter_polls_error_total counter\n");
             for c in &collectors {
                 if let Some(s) = self.collector_stats.get(c) {
                     buf.push_str(&format!(
-                        "modbus_exporter_polls_error_total{{collector=\"{c}\"}} {}\n",
+                        "bus_exporter_polls_error_total{{collector=\"{c}\"}} {}\n",
                         s.polls_error.load(ORD)
                     ));
                 }
             }
 
-            buf.push_str("# HELP modbus_exporter_modbus_requests_total Total Modbus register read requests per collector\n");
-            buf.push_str("# TYPE modbus_exporter_modbus_requests_total counter\n");
+            buf.push_str("# HELP bus_exporter_modbus_requests_total Total Modbus register read requests per collector\n");
+            buf.push_str("# TYPE bus_exporter_modbus_requests_total counter\n");
             for c in &collectors {
                 if let Some(s) = self.collector_stats.get(c) {
                     buf.push_str(&format!(
-                        "modbus_exporter_modbus_requests_total{{collector=\"{c}\"}} {}\n",
+                        "bus_exporter_modbus_requests_total{{collector=\"{c}\"}} {}\n",
                         s.modbus_requests.load(ORD)
                     ));
                 }
             }
 
-            buf.push_str("# HELP modbus_exporter_modbus_errors_total Failed Modbus register read requests per collector\n");
-            buf.push_str("# TYPE modbus_exporter_modbus_errors_total counter\n");
+            buf.push_str("# HELP bus_exporter_modbus_errors_total Failed Modbus register read requests per collector\n");
+            buf.push_str("# TYPE bus_exporter_modbus_errors_total counter\n");
             for c in &collectors {
                 if let Some(s) = self.collector_stats.get(c) {
                     buf.push_str(&format!(
-                        "modbus_exporter_modbus_errors_total{{collector=\"{c}\"}} {}\n",
+                        "bus_exporter_modbus_errors_total{{collector=\"{c}\"}} {}\n",
                         s.modbus_errors.load(ORD)
                     ));
                 }
             }
 
-            buf.push_str("# HELP modbus_exporter_poll_duration_seconds Duration of the last poll cycle in seconds\n");
-            buf.push_str("# TYPE modbus_exporter_poll_duration_seconds gauge\n");
+            buf.push_str("# HELP bus_exporter_poll_duration_seconds Duration of the last poll cycle in seconds\n");
+            buf.push_str("# TYPE bus_exporter_poll_duration_seconds gauge\n");
             for c in &collectors {
                 if let Some(s) = self.collector_stats.get(c) {
                     buf.push_str(&format!(
-                        "modbus_exporter_poll_duration_seconds{{collector=\"{c}\"}} {:.6}\n",
+                        "bus_exporter_poll_duration_seconds{{collector=\"{c}\"}} {:.6}\n",
                         s.get_poll_duration()
                     ));
                 }
@@ -203,26 +203,26 @@ impl InternalMetrics {
         }
 
         // Export metrics
-        buf.push_str("# HELP modbus_exporter_otlp_exports_total Total OTLP export attempts\n");
-        buf.push_str("# TYPE modbus_exporter_otlp_exports_total counter\n");
+        buf.push_str("# HELP bus_exporter_otlp_exports_total Total OTLP export attempts\n");
+        buf.push_str("# TYPE bus_exporter_otlp_exports_total counter\n");
         buf.push_str(&format!(
-            "modbus_exporter_otlp_exports_total {}\n",
+            "bus_exporter_otlp_exports_total {}\n",
             self.otlp_exports_total.load(ORD)
         ));
 
-        buf.push_str("# HELP modbus_exporter_otlp_errors_total Failed OTLP exports\n");
-        buf.push_str("# TYPE modbus_exporter_otlp_errors_total counter\n");
+        buf.push_str("# HELP bus_exporter_otlp_errors_total Failed OTLP exports\n");
+        buf.push_str("# TYPE bus_exporter_otlp_errors_total counter\n");
         buf.push_str(&format!(
-            "modbus_exporter_otlp_errors_total {}\n",
+            "bus_exporter_otlp_errors_total {}\n",
             self.otlp_errors_total.load(ORD)
         ));
 
         buf.push_str(
-            "# HELP modbus_exporter_prometheus_scrapes_total Total Prometheus scrape requests\n",
+            "# HELP bus_exporter_prometheus_scrapes_total Total Prometheus scrape requests\n",
         );
-        buf.push_str("# TYPE modbus_exporter_prometheus_scrapes_total counter\n");
+        buf.push_str("# TYPE bus_exporter_prometheus_scrapes_total counter\n");
         buf.push_str(&format!(
-            "modbus_exporter_prometheus_scrapes_total {}\n",
+            "bus_exporter_prometheus_scrapes_total {}\n",
             self.prometheus_scrapes_total.load(ORD)
         ));
 
@@ -239,7 +239,7 @@ impl InternalMetrics {
         let mut out = Vec::new();
 
         out.push(MetricValue {
-            name: "modbus_exporter_collectors_total".into(),
+            name: "bus_exporter_collectors_total".into(),
             value: self.collectors_total.load(ORD) as f64,
             metric_type: MetricType::Gauge,
             labels: BTreeMap::new(),
@@ -249,7 +249,7 @@ impl InternalMetrics {
         });
 
         out.push(MetricValue {
-            name: "modbus_exporter_uptime_seconds".into(),
+            name: "bus_exporter_uptime_seconds".into(),
             value: self.uptime_seconds(),
             metric_type: MetricType::Gauge,
             labels: BTreeMap::new(),
@@ -266,27 +266,27 @@ impl InternalMetrics {
 
             let counter_metrics = [
                 (
-                    "modbus_exporter_polls_total",
+                    "bus_exporter_polls_total",
                     s.polls_total.load(ORD),
                     "Total poll cycles per collector",
                 ),
                 (
-                    "modbus_exporter_polls_success_total",
+                    "bus_exporter_polls_success_total",
                     s.polls_success.load(ORD),
                     "Successful poll cycles per collector",
                 ),
                 (
-                    "modbus_exporter_polls_error_total",
+                    "bus_exporter_polls_error_total",
                     s.polls_error.load(ORD),
                     "Poll cycles with errors per collector",
                 ),
                 (
-                    "modbus_exporter_modbus_requests_total",
+                    "bus_exporter_modbus_requests_total",
                     s.modbus_requests.load(ORD),
                     "Total Modbus register read requests per collector",
                 ),
                 (
-                    "modbus_exporter_modbus_errors_total",
+                    "bus_exporter_modbus_errors_total",
                     s.modbus_errors.load(ORD),
                     "Failed Modbus register read requests per collector",
                 ),
@@ -305,7 +305,7 @@ impl InternalMetrics {
             }
 
             out.push(MetricValue {
-                name: "modbus_exporter_poll_duration_seconds".into(),
+                name: "bus_exporter_poll_duration_seconds".into(),
                 value: s.get_poll_duration(),
                 metric_type: MetricType::Gauge,
                 labels: labels.clone(),
@@ -316,7 +316,7 @@ impl InternalMetrics {
         }
 
         out.push(MetricValue {
-            name: "modbus_exporter_otlp_exports_total".into(),
+            name: "bus_exporter_otlp_exports_total".into(),
             value: self.otlp_exports_total.load(ORD) as f64,
             metric_type: MetricType::Counter,
             labels: BTreeMap::new(),
@@ -326,7 +326,7 @@ impl InternalMetrics {
         });
 
         out.push(MetricValue {
-            name: "modbus_exporter_otlp_errors_total".into(),
+            name: "bus_exporter_otlp_errors_total".into(),
             value: self.otlp_errors_total.load(ORD) as f64,
             metric_type: MetricType::Counter,
             labels: BTreeMap::new(),
@@ -336,7 +336,7 @@ impl InternalMetrics {
         });
 
         out.push(MetricValue {
-            name: "modbus_exporter_prometheus_scrapes_total".into(),
+            name: "bus_exporter_prometheus_scrapes_total".into(),
             value: self.prometheus_scrapes_total.load(ORD) as f64,
             metric_type: MetricType::Counter,
             labels: BTreeMap::new(),

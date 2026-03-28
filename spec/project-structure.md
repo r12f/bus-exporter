@@ -3,7 +3,7 @@
 ## Planned File Tree
 
 ```
-modbus-exporter/
+bus-exporter/
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml

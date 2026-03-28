@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for modbus-exporter
+# Multi-stage Dockerfile for bus-exporter
 # Supports linux/amd64 and linux/arm64
 
 FROM rust:alpine AS builder
@@ -9,8 +9,8 @@ RUN cargo build --release
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
-COPY --from=builder /src/target/release/modbus-exporter /usr/local/bin/
+COPY --from=builder /src/target/release/bus-exporter /usr/local/bin/
 EXPOSE 9090
 HEALTHCHECK NONE
-ENTRYPOINT ["modbus-exporter"]
-CMD ["--config", "/etc/modbus-exporter/config.yaml"]
+ENTRYPOINT ["bus-exporter"]
+CMD ["--config", "/etc/bus-exporter/config.yaml"]

@@ -12,12 +12,12 @@ services:
       retries: 10
       start_period: 5s
 
-  modbus-exporter:
+  bus-exporter:
     build:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./config/test.yaml:/etc/modbus-exporter/config.yaml:ro
+      - ./config/test.yaml:/etc/bus-exporter/config.yaml:ro
     ports:
       - "9090:9090"
     depends_on:

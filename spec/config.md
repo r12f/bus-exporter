@@ -11,8 +11,8 @@ If `--config <path>` is specified, use that path exactly (error if not found).
 If `--config` is **not** specified, search in order (first match wins):
 
 1. `./config.yaml` (current working directory — highest priority)
-2. `~/.config/modbus-exporter/config.yaml` (user config)
-3. `/etc/modbus-exporter/config.yaml` (system config)
+2. `~/.config/bus-exporter/config.yaml` (user config)
+3. `/etc/bus-exporter/config.yaml` (system config)
 
 If none found, exit with an error listing all searched paths.
 
@@ -20,7 +20,7 @@ If none found, exit with an error listing all searched paths.
 
 All relative paths within the config file (e.g., `metrics_files` entries) are resolved relative to the **parent directory of the config file that was loaded**, not the current working directory.
 
-Example: config loaded from `~/.config/modbus-exporter/config.yaml` with `metrics_files: ["devices/sdm630.yaml"]` → resolves to `~/.config/modbus-exporter/devices/sdm630.yaml`.
+Example: config loaded from `~/.config/bus-exporter/config.yaml` with `metrics_files: ["devices/sdm630.yaml"]` → resolves to `~/.config/bus-exporter/devices/sdm630.yaml`.
 
 ## Example
 
@@ -145,7 +145,7 @@ Metrics files allow reusable metric definitions across multiple collectors with 
 #### File Path Resolution
 
 Relative paths are resolved against the **config file's parent directory**.
-Example: config at `/etc/modbus-exporter/config.yaml` + `metrics_files: ["devices/sdm630.yaml"]` → `/etc/modbus-exporter/devices/sdm630.yaml`.
+Example: config at `/etc/bus-exporter/config.yaml` + `metrics_files: ["devices/sdm630.yaml"]` → `/etc/bus-exporter/devices/sdm630.yaml`.
 Absolute paths are used as-is.
 
 #### File Format

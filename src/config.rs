@@ -9,7 +9,7 @@ use std::time::Duration;
 use tracing::info;
 
 #[derive(Parser, Debug)]
-#[command(name = "modbus-exporter")]
+#[command(name = "bus-exporter")]
 pub struct Cli {
     /// Path to the configuration file
     #[arg(short, long)]
@@ -19,8 +19,8 @@ pub struct Cli {
 /// Default search paths for the config file (in priority order).
 pub const CONFIG_SEARCH_PATHS: &[&str] = &[
     "./config.yaml",
-    "~/.config/modbus-exporter/config.yaml",
-    "/etc/modbus-exporter/config.yaml",
+    "~/.config/bus-exporter/config.yaml",
+    "/etc/bus-exporter/config.yaml",
 ];
 
 /// Find the config file using the fallback search order.

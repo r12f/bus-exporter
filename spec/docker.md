@@ -17,9 +17,9 @@ RUN cargo build --release
 ```dockerfile
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
-COPY --from=builder /src/target/release/modbus-exporter /usr/local/bin/
-ENTRYPOINT ["modbus-exporter"]
-CMD ["--config", "/etc/modbus-exporter/config.yaml"]
+COPY --from=builder /src/target/release/bus-exporter /usr/local/bin/
+ENTRYPOINT ["bus-exporter"]
+CMD ["--config", "/etc/bus-exporter/config.yaml"]
 ```
 
 ## Multi-arch Build
@@ -30,14 +30,14 @@ CMD ["--config", "/etc/modbus-exporter/config.yaml"]
 ```bash
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t r12f/modbus-exporter:latest \
+  -t r12f/bus-exporter:latest \
   --push .
 ```
 
 ## Config Mount Point
 
-- Default config path inside container: `/etc/modbus-exporter/config.yaml`
-- Mount via: `-v /host/path/config.yaml:/etc/modbus-exporter/config.yaml:ro`
+- Default config path inside container: `/etc/bus-exporter/config.yaml`
+- Mount via: `-v /host/path/config.yaml:/etc/bus-exporter/config.yaml:ro`
 
 ## Serial Device Access
 

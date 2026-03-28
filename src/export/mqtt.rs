@@ -106,7 +106,7 @@ pub async fn run_mqtt_exporter(
     let client_id = config
         .client_id
         .clone()
-        .unwrap_or_else(|| "modbus-exporter".to_string());
+        .unwrap_or_else(|| "bus-exporter".to_string());
 
     let mut mqttoptions = MqttOptions::new(&client_id, &host, port);
     mqttoptions.set_keep_alive(config.timeout);

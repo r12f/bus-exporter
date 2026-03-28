@@ -236,6 +236,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
 
 [[package]]
+name = "bus-exporter"
+version = "0.1.2"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum 0.8.8",
+ "bytes",
+ "clap",
+ "dashmap",
+ "futures",
+ "humantime-serde",
+ "indexmap 2.13.0",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "prometheus-client",
+ "reqwest",
+ "rumqttc",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "tokio-modbus",
+ "tokio-serial",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1070,36 +1100,6 @@ dependencies = [
  "nix 0.29.0",
  "serialport",
  "winapi",
-]
-
-[[package]]
-name = "modbus-exporter"
-version = "0.1.2"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum 0.8.8",
- "bytes",
- "clap",
- "dashmap",
- "futures",
- "humantime-serde",
- "indexmap 2.13.0",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "prometheus-client",
- "reqwest",
- "rumqttc",
- "serde",
- "serde_yaml",
- "tempfile",
- "tokio",
- "tokio-modbus",
- "tokio-serial",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

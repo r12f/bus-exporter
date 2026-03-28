@@ -1,4 +1,4 @@
-# modbus-exporter
+# bus-exporter
 
 An OpenTelemetry-native Modbus exporter that polls Modbus RTU and TCP devices and exports metrics via OTLP (protobuf/HTTP) and Prometheus scrape endpoint.
 
@@ -7,17 +7,17 @@ An OpenTelemetry-native Modbus exporter that polls Modbus RTU and TCP devices an
 ### Cargo
 
 ```bash
-cargo install modbus-exporter
+cargo install bus-exporter
 ```
 
 ### Docker
 
 ```bash
 docker run -d \
-  -v /path/to/config.yaml:/etc/modbus-exporter/config.yaml:ro \
+  -v /path/to/config.yaml:/etc/bus-exporter/config.yaml:ro \
   -p 9090:9090 \
   --device /dev/ttyUSB0:/dev/ttyUSB0 \
-  r12f/modbus-exporter:latest
+  r12f/bus-exporter:latest
 ```
 
 For TCP-only collectors, the `--device` flag is not needed.

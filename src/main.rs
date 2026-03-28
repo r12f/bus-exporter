@@ -75,9 +75,9 @@ impl MetricReaderFactory for RealMetricReaderFactory {
                 #[cfg(not(target_os = "linux"))]
                 let device: Box<dyn reader::i2c::I2cDevice> = Box::new(reader::i2c::StubI2cDevice);
 
-                let mut client = reader::i2c::I2cMetricReader::new(device, bus.clone(), *address);
                 let bus_lock = reader::i2c::get_bus_lock(bus);
-                client.set_bus_lock(bus_lock);
+                let client =
+                    reader::i2c::I2cMetricReader::new(device, bus.clone(), *address, bus_lock);
                 Ok(Box::new(client))
             }
             Protocol::Spi {
@@ -101,9 +101,9 @@ impl MetricReaderFactory for RealMetricReaderFactory {
                 let spi_device: Box<dyn reader::spi::SpiDevice> =
                     Box::new(reader::spi::StubSpiDevice);
 
-                let mut client = reader::spi::SpiMetricReader::new(spi_device, device.clone());
                 let device_lock = reader::spi::get_device_lock(device);
-                client.set_device_lock(device_lock);
+                let client =
+                    reader::spi::SpiMetricReader::new(spi_device, device.clone(), device_lock);
                 Ok(Box::new(client))
             }
             Protocol::I3c {

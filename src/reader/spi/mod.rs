@@ -102,7 +102,7 @@ pub struct SpiMetricReader {
     device: Arc<std::sync::Mutex<Box<dyn SpiDevice>>>,
     device_path: String,
     connected: bool,
-    device_lock: Option<DeviceLock>,
+    device_lock: DeviceLock,
 }
 
 /// Per-device mutex map for serializing access to same chip-select.
@@ -118,18 +118,13 @@ pub fn get_device_lock(device_path: &str) -> DeviceLock {
 }
 
 impl SpiMetricReader {
-    pub fn new(device: Box<dyn SpiDevice>, device_path: String) -> Self {
+    pub fn new(device: Box<dyn SpiDevice>, device_path: String, device_lock: DeviceLock) -> Self {
         Self {
             device: Arc::new(std::sync::Mutex::new(device)),
             device_path,
             connected: false,
-            device_lock: None,
+            device_lock,
         }
-    }
-
-    /// Set the device lock (for serializing access to the same chip-select).
-    pub fn set_device_lock(&mut self, lock: DeviceLock) {
-        self.device_lock = Some(lock);
     }
 
     /// Perform a synchronous SPI transfer.
@@ -212,11 +207,7 @@ impl crate::reader::MetricReader for SpiMetricReader {
     }
 
     async fn read(&mut self, metric: &config::MetricConfig) -> Result<f64> {
-        let device_lock = self
-            .device_lock
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("SPI device lock not set"))?;
-        read_spi_metric(self, metric, device_lock).await
+        read_spi_metric(self, metric, &self.device_lock.clone()).await
     }
 }
 

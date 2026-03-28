@@ -99,16 +99,16 @@ async fn run_collector(
                 return;
             }
 
-            let batch_results = client.batch_read(&collector.metrics).await;
+            let batch_result = client.batch_read(&collector.metrics).await;
 
             if let Some(ref im) = internal_metrics {
                 let stats = im.get_or_create_collector(&collector.name);
                 stats
                     .modbus_requests
-                    .fetch_add(batch_results.len() as u64, Relaxed);
+                    .fetch_add(batch_result.read_count as u64, Relaxed);
             }
 
-            for (metric_cfg, result) in batch_results {
+            for (metric_cfg, result) in batch_result.results {
                 match result {
                     Ok(value) => {
                         local_cache.insert(

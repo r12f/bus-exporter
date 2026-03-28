@@ -102,7 +102,7 @@ pub struct I2cMetricReader {
     bus_path: String,
     address: u8,
     connected: bool,
-    bus_lock: Option<BusLock>,
+    bus_lock: BusLock,
 }
 
 /// Per-bus mutex map for serializing access.
@@ -118,19 +118,19 @@ pub fn get_bus_lock(bus_path: &str) -> BusLock {
 }
 
 impl I2cMetricReader {
-    pub fn new(device: Box<dyn I2cDevice>, bus_path: String, address: u8) -> Self {
+    pub fn new(
+        device: Box<dyn I2cDevice>,
+        bus_path: String,
+        address: u8,
+        bus_lock: BusLock,
+    ) -> Self {
         Self {
             device: Arc::new(std::sync::Mutex::new(device)),
             bus_path,
             address,
             connected: false,
-            bus_lock: None,
+            bus_lock,
         }
-    }
-
-    /// Set the bus lock (for serializing access to the shared I2C bus).
-    pub fn set_bus_lock(&mut self, lock: BusLock) {
-        self.bus_lock = Some(lock);
     }
 
     /// Read bytes from a register address on the I2C device.
@@ -208,11 +208,7 @@ impl crate::reader::MetricReader for I2cMetricReader {
     }
 
     async fn read(&mut self, metric: &config::MetricConfig) -> Result<f64> {
-        let bus_lock = self
-            .bus_lock
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("I2C bus lock not set"))?;
-        read_i2c_metric(self, metric, bus_lock).await
+        read_i2c_metric(self, metric, &self.bus_lock.clone()).await
     }
 }
 

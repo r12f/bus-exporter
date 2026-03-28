@@ -194,12 +194,15 @@ impl crate::reader::MetricReader for ModbusRtuMetricReader {
     async fn batch_read<'a>(
         &mut self,
         metrics: &'a [crate::config::MetricConfig],
-    ) -> Vec<(&'a crate::config::MetricConfig, Result<f64>)> {
+    ) -> crate::reader::BatchReadResult<'a> {
         let super::batch::BatchReadResult {
             results,
-            read_count: _,
+            read_count,
         } = super::batch::batch_read_coalesced(self, metrics).await;
-        results
+        crate::reader::BatchReadResult {
+            results,
+            read_count,
+        }
     }
 }
 

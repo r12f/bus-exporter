@@ -469,10 +469,12 @@ impl crate::reader::MetricReader for I3cMetricReaderHandle {
     }
 
     fn is_connected(&self) -> bool {
+        // If the lock is contended, conservatively report disconnected rather than
+        // silently masking a potential disconnection state.
         self.client
             .try_lock()
             .map(|c| c.is_connected())
-            .unwrap_or(true)
+            .unwrap_or(false)
     }
 
     fn capabilities(&self) -> crate::reader::ReaderCapabilities {

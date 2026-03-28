@@ -203,7 +203,7 @@ pub async fn run_mqtt_exporter(
         .unwrap_or_else(|| "bus-exporter".to_string());
 
     let mut mqttoptions = MqttOptions::new(&client_id, &host, port);
-    mqttoptions.set_keep_alive(Duration::from_secs(60));
+    mqttoptions.set_keep_alive(std::cmp::max(config.timeout, Duration::from_secs(5)));
 
     if let Some(auth) = &config.auth {
         mqttoptions.set_credentials(&auth.username, &auth.password);

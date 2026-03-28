@@ -2,35 +2,89 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::warn;
 
 use crate::bus;
 use crate::config;
 use crate::decoder;
 
 /// Type alias for per-bus mutex (serializes access to a single I3C controller).
-pub type BusLock = Arc<tokio::sync::Mutex<()>>;
+pub type BusLock = Arc<std::sync::Mutex<()>>;
+
+/// I3C error classification for retry logic.
+#[derive(Debug)]
+pub enum I3cErrorKind {
+    /// NACK or transfer error — re-enumeration may help.
+    TransferError,
+    /// Configuration or other non-bus error — do not re-enumerate.
+    Other,
+}
+
+/// Classify an error to decide whether re-enumeration is warranted.
+fn classify_error(err: &anyhow::Error) -> I3cErrorKind {
+    let msg = format!("{err:#}").to_lowercase();
+    if msg.contains("nack")
+        || msg.contains("transfer")
+        || msg.contains("i/o error")
+        || msg.contains("io error")
+        || msg.contains("connection reset")
+        || msg.contains("remote i/o")
+    {
+        I3cErrorKind::TransferError
+    } else {
+        I3cErrorKind::Other
+    }
+}
 
 /// Trait abstracting I3C device operations for testability.
+/// Takes `&mut self` (like I2C's `I2cDevice` trait) so no `unsafe` is needed.
 pub trait I3cDevice: Send {
     /// Read from a device at the given dynamic address.
     /// Sends `command` bytes (register address), then reads `response_length` bytes.
-    fn read(&self, address: u8, command: &[u8], response_length: usize) -> Result<Vec<u8>>;
+    fn read(&mut self, address: u8, command: &[u8], response_length: usize) -> Result<Vec<u8>>;
 }
 
-/// Real I3C device using Linux /dev/i3c-N character device.
+/// Real I3C device using Linux /dev/i3c-N character device with ioctl-based addressing.
 #[cfg(target_os = "linux")]
 pub mod linux_device {
     use super::*;
-    use std::io::{Read, Write};
+    use std::os::unix::io::AsRawFd;
+
+    /// I3C private transfer direction.
+    #[repr(u8)]
+    #[allow(dead_code)]
+    enum I3cTransferDir {
+        Write = 0,
+        Read = 1,
+    }
+
+    /// Kernel struct for `I3C_IOC_PRIV_XFER` ioctl.
+    #[repr(C)]
+    struct I3cPrivTransfer {
+        data: u64, // pointer to buffer
+        len: u16,  // buffer length
+        rnw: u8,   // 0 = write, 1 = read
+        _pad: [u8; 5],
+    }
+
+    /// ioctl request code for I3C private transfers.
+    /// I3C_IOC_PRIV_XFER = _IOR('i', 0x30, struct i3c_ioc_priv_xfer)
+    /// We use the raw number since nix::ioctl! doesn't easily handle variable-length arrays.
+    const I3C_IOC_PRIV_XFER_BASE: u64 = 0x69; // 'i'
+    const I3C_IOC_PRIV_XFER_NR: u64 = 0x30;
+
+    fn i3c_ioc_priv_xfer(num_xfers: usize) -> libc::c_ulong {
+        // _IOC(_IOC_READ | _IOC_WRITE, 'i', 0x30, num_xfers * sizeof(I3cPrivTransfer))
+        let size = (num_xfers * std::mem::size_of::<I3cPrivTransfer>()) as u64;
+        let dir: u64 = 3; // _IOC_READ | _IOC_WRITE
+        ((dir << 30) | (I3C_IOC_PRIV_XFER_BASE << 8) | I3C_IOC_PRIV_XFER_NR | (size << 16))
+            as libc::c_ulong
+    }
 
     pub struct LinuxI3cDevice {
         bus_path: String,
-        fd: Option<std::cell::UnsafeCell<std::fs::File>>,
+        fd: Option<std::fs::File>,
     }
-
-    // SAFETY: We ensure single-threaded access through external bus locking.
-    unsafe impl Send for LinuxI3cDevice {}
-    unsafe impl Sync for LinuxI3cDevice {}
 
     impl LinuxI3cDevice {
         pub fn new(bus_path: String) -> Self {
@@ -44,25 +98,52 @@ pub mod linux_device {
                 .write(true)
                 .open(&self.bus_path)
                 .with_context(|| format!("opening I3C bus {}", self.bus_path))?;
-            self.fd = Some(std::cell::UnsafeCell::new(file));
+            self.fd = Some(file);
             Ok(())
         }
     }
 
     impl I3cDevice for LinuxI3cDevice {
-        fn read(&self, _address: u8, command: &[u8], response_length: usize) -> Result<Vec<u8>> {
-            let cell = self
+        fn read(
+            &mut self,
+            _address: u8,
+            command: &[u8],
+            response_length: usize,
+        ) -> Result<Vec<u8>> {
+            let file = self
                 .fd
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("I3C device not opened"))?;
-            // SAFETY: Access is serialized by the bus lock.
-            let fd_mut = unsafe { &mut *cell.get() };
-            fd_mut
-                .write_all(command)
-                .context("I3C write register address")?;
-            let mut buf = vec![0u8; response_length];
-            fd_mut.read_exact(&mut buf).context("I3C read data")?;
-            Ok(buf)
+            let raw_fd = file.as_raw_fd();
+
+            // Build two transfers: write command, then read response.
+            let mut read_buf = vec![0u8; response_length];
+            let mut cmd_buf = command.to_vec();
+
+            let xfers = [
+                I3cPrivTransfer {
+                    data: cmd_buf.as_mut_ptr() as u64,
+                    len: cmd_buf.len() as u16,
+                    rnw: I3cTransferDir::Write as u8,
+                    _pad: [0; 5],
+                },
+                I3cPrivTransfer {
+                    data: read_buf.as_mut_ptr() as u64,
+                    len: read_buf.len() as u16,
+                    rnw: I3cTransferDir::Read as u8,
+                    _pad: [0; 5],
+                },
+            ];
+
+            let request = i3c_ioc_priv_xfer(xfers.len());
+            // SAFETY: xfers is a valid array of I3cPrivTransfer structs pointing to valid buffers.
+            let ret = unsafe { libc::ioctl(raw_fd, request, xfers.as_ptr()) };
+            if ret < 0 {
+                return Err(std::io::Error::last_os_error())
+                    .context("I3C private transfer ioctl failed");
+            }
+
+            Ok(read_buf)
         }
     }
 }
@@ -71,7 +152,7 @@ pub mod linux_device {
 pub struct StubI3cDevice;
 
 impl I3cDevice for StubI3cDevice {
-    fn read(&self, _address: u8, _command: &[u8], _response_length: usize) -> Result<Vec<u8>> {
+    fn read(&mut self, _address: u8, _command: &[u8], _response_length: usize) -> Result<Vec<u8>> {
         anyhow::bail!("StubI3cDevice: no real I3C hardware available")
     }
 }
@@ -101,7 +182,7 @@ static BUS_LOCKS: std::sync::LazyLock<std::sync::Mutex<HashMap<String, BusLock>>
 pub fn get_bus_lock(bus_path: &str) -> BusLock {
     let mut map = BUS_LOCKS.lock().unwrap();
     map.entry(bus_path.to_string())
-        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+        .or_insert_with(|| Arc::new(std::sync::Mutex::new(())))
         .clone()
 }
 
@@ -216,46 +297,53 @@ impl I3cClient {
         ];
 
         let address = self.resolve_address()?;
-        let dev = self
+        let mut dev = self
             .device
             .lock()
             .map_err(|e| anyhow::anyhow!("device lock poisoned: {e}"))?;
 
-        let result = dev.read(address, &[register], byte_count);
-        if let Ok(data) = result {
-            return Ok(data);
-        }
-        let first_err = result.unwrap_err();
-        drop(dev);
+        match dev.read(address, &[register], byte_count) {
+            Ok(data) => Ok(data),
+            Err(err) => {
+                // Only retry on transfer/NACK errors; propagate others immediately.
+                if matches!(classify_error(&err), I3cErrorKind::Other) {
+                    return Err(err).context("I3C read failed (non-retriable)");
+                }
+                drop(dev);
 
-        let mut last_err = first_err;
-        for (attempt, backoff) in backoffs.iter().enumerate() {
-            std::thread::sleep(*backoff);
-            self.invalidate_address();
-            match self.resolve_address() {
-                Ok(new_addr) => {
-                    let dev = self
-                        .device
-                        .lock()
-                        .map_err(|e| anyhow::anyhow!("device lock poisoned: {e}"))?;
-                    match dev.read(new_addr, &[register], byte_count) {
-                        Ok(data) => return Ok(data),
+                let mut last_err = err;
+                for (attempt, backoff) in backoffs.iter().enumerate() {
+                    warn!(
+                        bus = %self.bus_path,
+                        attempt = attempt + 1,
+                        backoff_ms = backoff.as_millis() as u64,
+                        "I3C transfer error, re-enumerating after backoff"
+                    );
+                    std::thread::sleep(*backoff);
+                    self.invalidate_address();
+                    match self.resolve_address() {
+                        Ok(new_addr) => {
+                            let mut dev = self
+                                .device
+                                .lock()
+                                .map_err(|e| anyhow::anyhow!("device lock poisoned: {e}"))?;
+                            match dev.read(new_addr, &[register], byte_count) {
+                                Ok(data) => return Ok(data),
+                                Err(e) => last_err = e,
+                            }
+                        }
                         Err(e) => last_err = e,
                     }
                 }
-                Err(e) => last_err = e,
-            }
-            if attempt == backoffs.len() - 1 {
-                return Err(last_err).with_context(|| {
+                Err(last_err).with_context(|| {
                     format!(
                         "I3C read failed after {} retries on {}",
                         backoffs.len(),
                         self.bus_path
                     )
-                });
+                })
             }
         }
-        Err(last_err)
     }
 }
 
@@ -277,7 +365,9 @@ pub async fn read_i3c_metric(
     let bus_lock = bus_lock.clone();
 
     let bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>> {
-        let _lock = bus_lock.blocking_lock();
+        let _lock = bus_lock
+            .lock()
+            .map_err(|e| anyhow::anyhow!("bus lock poisoned: {e}"))?;
         let mut c = client.blocking_lock();
         c.read_register_sync(register, num_bytes)
     })

@@ -28,7 +28,7 @@ impl MockI3cDevice {
 }
 
 impl I3cDevice for MockI3cDevice {
-    fn read(&self, _address: u8, _command: &[u8], _response_length: usize) -> Result<Vec<u8>> {
+    fn read(&mut self, _address: u8, _command: &[u8], _response_length: usize) -> Result<Vec<u8>> {
         let mut count = self.call_count.lock().unwrap();
         let mut responses = self.responses.lock().unwrap();
         *count += 1;
@@ -427,7 +427,7 @@ async fn test_read_i3c_metric_u8() {
         AddressMode::Static(0x30),
     );
     let client = Arc::new(tokio::sync::Mutex::new(client));
-    let bus_lock = Arc::new(tokio::sync::Mutex::new(()));
+    let bus_lock = Arc::new(std::sync::Mutex::new(()));
     let metric = make_metric("temp", 0xFA, DataType::U8, ByteOrder::BigEndian);
 
     let value = read_i3c_metric(&client, &metric, &bus_lock).await.unwrap();
@@ -443,7 +443,7 @@ async fn test_read_i3c_metric_u16_big_endian() {
         AddressMode::Static(0x30),
     );
     let client = Arc::new(tokio::sync::Mutex::new(client));
-    let bus_lock = Arc::new(tokio::sync::Mutex::new(()));
+    let bus_lock = Arc::new(std::sync::Mutex::new(()));
     let metric = make_metric("temp", 0xFA, DataType::U16, ByteOrder::BigEndian);
 
     let value = read_i3c_metric(&client, &metric, &bus_lock).await.unwrap();
@@ -459,7 +459,7 @@ async fn test_read_i3c_metric_u16_little_endian() {
         AddressMode::Static(0x30),
     );
     let client = Arc::new(tokio::sync::Mutex::new(client));
-    let bus_lock = Arc::new(tokio::sync::Mutex::new(()));
+    let bus_lock = Arc::new(std::sync::Mutex::new(()));
     let metric = make_metric("temp", 0xFA, DataType::U16, ByteOrder::LittleEndian);
 
     let value = read_i3c_metric(&client, &metric, &bus_lock).await.unwrap();
@@ -476,7 +476,7 @@ async fn test_read_i3c_metric_f32_big_endian() {
         AddressMode::Static(0x30),
     );
     let client = Arc::new(tokio::sync::Mutex::new(client));
-    let bus_lock = Arc::new(tokio::sync::Mutex::new(()));
+    let bus_lock = Arc::new(std::sync::Mutex::new(()));
     let metric = make_metric("temp", 0xFA, DataType::F32, ByteOrder::BigEndian);
 
     let value = read_i3c_metric(&client, &metric, &bus_lock).await.unwrap();
@@ -492,7 +492,7 @@ async fn test_read_i3c_metric_with_scale_offset() {
         AddressMode::Static(0x30),
     );
     let client = Arc::new(tokio::sync::Mutex::new(client));
-    let bus_lock = Arc::new(tokio::sync::Mutex::new(()));
+    let bus_lock = Arc::new(std::sync::Mutex::new(()));
     let mut metric = make_metric("temp", 0xFA, DataType::U16, ByteOrder::BigEndian);
     metric.scale = 0.1;
     metric.offset = -40.0;

@@ -1,10 +1,8 @@
 use anyhow::{Context, Result};
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::warn;
 
-use crate::bus;
 use crate::config;
 use crate::decoder;
 
@@ -282,6 +280,11 @@ impl I3cClient {
         }
     }
 
+    /// Set the resolved address (for testing without sysfs).
+    pub fn set_resolved_address(&mut self, addr: u8) {
+        self.resolved_address = Some(addr);
+    }
+
     /// Resolve address (if not already cached).
     pub fn resolve_address(&mut self) -> Result<u8> {
         if let Some(addr) = self.resolved_address {
@@ -359,6 +362,23 @@ impl I3cClient {
             }
         }
     }
+
+    /// Mark client as connected.
+    pub async fn connect(&mut self) -> Result<()> {
+        self.connected = true;
+        Ok(())
+    }
+
+    /// Mark client as disconnected.
+    pub async fn disconnect(&mut self) -> Result<()> {
+        self.connected = false;
+        Ok(())
+    }
+
+    /// Check if client is connected.
+    pub fn is_connected(&self) -> bool {
+        self.connected
+    }
 }
 
 /// Read a single I3C metric.
@@ -367,8 +387,8 @@ pub async fn read_i3c_metric(
     metric: &config::Metric,
     bus_lock: &BusLock,
 ) -> Result<f64> {
-    let data_type = bus::map_data_type(metric.data_type);
-    let byte_order = bus::map_byte_order(metric.byte_order);
+    let data_type = map_data_type(metric.data_type);
+    let byte_order = map_byte_order(metric.byte_order);
 
     // address validated as present and in u8 range by config
     let register = metric.address.unwrap() as u8;
@@ -394,21 +414,29 @@ pub async fn read_i3c_metric(
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-/// Connection/lifecycle trait impl for I3cClient (mirrors BusConnection).
-#[async_trait]
-impl crate::modbus::BusConnection for I3cClient {
-    async fn connect(&mut self) -> Result<()> {
-        self.connected = true;
-        Ok(())
+/// Map config byte order to decoder byte order.
+fn map_byte_order(bo: config::ByteOrder) -> decoder::ByteOrder {
+    match bo {
+        config::ByteOrder::BigEndian => decoder::ByteOrder::BigEndian,
+        config::ByteOrder::LittleEndian => decoder::ByteOrder::LittleEndian,
+        config::ByteOrder::MidBigEndian => decoder::ByteOrder::MidBigEndian,
+        config::ByteOrder::MidLittleEndian => decoder::ByteOrder::MidLittleEndian,
     }
+}
 
-    async fn disconnect(&mut self) -> Result<()> {
-        self.connected = false;
-        Ok(())
-    }
-
-    fn is_connected(&self) -> bool {
-        self.connected
+/// Map config data type to decoder data type.
+fn map_data_type(dt: config::DataType) -> decoder::DataType {
+    match dt {
+        config::DataType::U8 => decoder::DataType::U8,
+        config::DataType::U16 => decoder::DataType::U16,
+        config::DataType::I16 => decoder::DataType::I16,
+        config::DataType::U32 => decoder::DataType::U32,
+        config::DataType::I32 => decoder::DataType::I32,
+        config::DataType::F32 => decoder::DataType::F32,
+        config::DataType::U64 => decoder::DataType::U64,
+        config::DataType::I64 => decoder::DataType::I64,
+        config::DataType::F64 => decoder::DataType::F64,
+        config::DataType::Bool => decoder::DataType::Bool,
     }
 }
 

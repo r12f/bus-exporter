@@ -63,7 +63,6 @@ impl BusClient {
             }
             BusClient::I3c { client, .. } => {
                 let mut c = client.lock().await;
-                use crate::modbus::BusConnection;
                 c.connect().await
             }
         }
@@ -82,7 +81,6 @@ impl BusClient {
             }
             BusClient::I3c { client, .. } => {
                 let mut c = client.lock().await;
-                use crate::modbus::BusConnection;
                 c.disconnect().await
             }
         }
@@ -101,13 +99,7 @@ impl BusClient {
             }
             BusClient::I3c { client, .. } => {
                 // Best-effort: try_lock to avoid blocking
-                client
-                    .try_lock()
-                    .map(|c| {
-                        use crate::modbus::BusConnection;
-                        c.is_connected()
-                    })
-                    .unwrap_or(true)
+                client.try_lock().map(|c| c.is_connected()).unwrap_or(true)
             }
         }
     }

@@ -4,7 +4,8 @@
 //! to exercise the full path: config parsing → I3C client → read_metric →
 //! decode → validate values.
 
-use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
+use std::sync::Arc;
 
 use anyhow::Result;
 use bus_exporter::config::{ByteOrder, Config, DataType, Metric, MetricType};
@@ -14,15 +15,15 @@ use bus_exporter::i3c::{AddressMode, I3cClient, I3cDevice};
 
 /// Mock I3C device with configurable per-call responses.
 struct MockI3cDevice {
-    responses: Mutex<Vec<Result<Vec<u8>>>>,
-    calls: Mutex<Vec<(u8, Vec<u8>, usize)>>,
+    responses: VecDeque<Result<Vec<u8>>>,
+    calls: Vec<(u8, Vec<u8>, usize)>,
 }
 
 impl MockI3cDevice {
     fn new(responses: Vec<Result<Vec<u8>>>) -> Self {
         Self {
-            responses: Mutex::new(responses),
-            calls: Mutex::new(Vec::new()),
+            responses: VecDeque::from(responses),
+            calls: Vec::new(),
         }
     }
 
@@ -30,24 +31,16 @@ impl MockI3cDevice {
         let responses: Vec<Result<Vec<u8>>> = (0..100).map(|_| Ok(data.clone())).collect();
         Self::new(responses)
     }
-
-    #[allow(dead_code)]
-    fn call_count(&self) -> usize {
-        self.calls.lock().unwrap().len()
-    }
 }
 
 impl I3cDevice for MockI3cDevice {
     fn write_read(&mut self, address: u8, write_buf: &[u8], read_len: usize) -> Result<Vec<u8>> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push((address, write_buf.to_vec(), read_len));
-        let mut responses = self.responses.lock().unwrap();
-        if responses.is_empty() {
+        self.calls.push((address, write_buf.to_vec(), read_len));
+        if let Some(resp) = self.responses.pop_front() {
+            resp
+        } else {
             anyhow::bail!("no more mock responses")
         }
-        responses.remove(0)
     }
 }
 
@@ -257,6 +250,82 @@ async fn pipeline_f32_big_endian() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// 2b. Pipeline tests for Pid and DeviceClass address modes
+// ═══════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn pipeline_pid_address_mode() {
+    // Pid mode with a static-resolved address (resolve_address falls back to
+    // Static on non-Linux). We test the client plumbing by pre-setting a
+    // resolved address via the Static path workaround: construct with Static,
+    // then verify the full read path works identically.
+    // On non-Linux, Pid resolution returns an error from sysfs, so we use
+    // a Static address to exercise the pipeline. The Pid config parsing is
+    // already tested above.
+    let device = MockI3cDevice::fixed(vec![0xAB]); // 171
+    let client = I3cClient::new(
+        Box::new(device),
+        "/dev/i3c-0".into(),
+        AddressMode::Pid("0x0123456789AB".into()),
+    );
+    // Manually set the resolved address so the pipeline works in CI (no sysfs).
+    let client = {
+        let mut c = client;
+        // Force-resolve to a known address for testing.
+        c.set_resolved_address(0x30);
+        c
+    };
+    let client = Arc::new(tokio::sync::Mutex::new(client));
+    let bus_lock = Arc::new(std::sync::Mutex::new(()));
+    let metric = make_metric(
+        "pid_metric",
+        0xFA,
+        DataType::U8,
+        ByteOrder::BigEndian,
+        1.0,
+        0.0,
+    );
+
+    let val = bus_exporter::i3c::read_i3c_metric(&client, &metric, &bus_lock)
+        .await
+        .unwrap();
+    assert!((val - 171.0).abs() < f64::EPSILON);
+}
+
+#[tokio::test]
+async fn pipeline_device_class_address_mode() {
+    let device = MockI3cDevice::fixed(vec![0x00, 0xC8]); // u16 BE = 200
+    let client = I3cClient::new(
+        Box::new(device),
+        "/dev/i3c-0".into(),
+        AddressMode::DeviceClass {
+            class: "temperature-sensor".into(),
+            instance: 0,
+        },
+    );
+    let client = {
+        let mut c = client;
+        c.set_resolved_address(0x40);
+        c
+    };
+    let client = Arc::new(tokio::sync::Mutex::new(client));
+    let bus_lock = Arc::new(std::sync::Mutex::new(()));
+    let metric = make_metric(
+        "class_metric",
+        0x10,
+        DataType::U16,
+        ByteOrder::BigEndian,
+        0.5,
+        0.0,
+    );
+
+    let val = bus_exporter::i3c::read_i3c_metric(&client, &metric, &bus_lock)
+        .await
+        .unwrap();
+    assert!((val - 100.0).abs() < 0.001); // 200 * 0.5 = 100
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // 3. Multiple metrics from the same device in sequence
 // ═══════════════════════════════════════════════════════════════════
 
@@ -293,7 +362,6 @@ async fn pipeline_multiple_metrics_sequential() {
 
 #[test]
 fn reenumeration_nack_then_success_static() {
-    // Static address: NACK on first read, success on retry (address stays same).
     let responses: Vec<Result<Vec<u8>>> = vec![
         Err(anyhow::anyhow!("NACK: transfer error")),
         Ok(vec![0xBE, 0xEF]),
@@ -307,14 +375,10 @@ fn reenumeration_nack_then_success_static() {
 
     let data = client.read_register_sync(0xFA, 2).unwrap();
     assert_eq!(data, vec![0xBE, 0xEF]);
-
-    // Verify device was called at least twice (initial + retry)
-    // We can't access mock directly after move, but success proves retry worked.
 }
 
 #[test]
 fn reenumeration_all_nack_exhausts_retries() {
-    // All reads fail with NACK — should exhaust retries and return error.
     let responses: Vec<Result<Vec<u8>>> = vec![
         Err(anyhow::anyhow!("NACK")),
         Err(anyhow::anyhow!("NACK")),
@@ -334,7 +398,43 @@ fn reenumeration_all_nack_exhausts_retries() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 5. Config validation — invalid configs should error
+// 5. Async error propagation
+// ═══════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn async_error_propagation() {
+    let responses: Vec<Result<Vec<u8>>> = vec![Err(anyhow::anyhow!(
+        "sensor offline: device not responding"
+    ))];
+    let device = MockI3cDevice::new(responses);
+    let client = I3cClient::new(
+        Box::new(device),
+        "/dev/i3c-0".into(),
+        AddressMode::Static(0x30),
+    );
+    let client = Arc::new(tokio::sync::Mutex::new(client));
+    let bus_lock = Arc::new(std::sync::Mutex::new(()));
+    let metric = make_metric(
+        "err_metric",
+        0xFA,
+        DataType::U8,
+        ByteOrder::BigEndian,
+        1.0,
+        0.0,
+    );
+
+    let result = bus_exporter::i3c::read_i3c_metric(&client, &metric, &bus_lock).await;
+    assert!(result.is_err());
+    // Error is wrapped in context; verify it propagates through the async path.
+    let err_msg = format!("{:#}", result.unwrap_err());
+    assert!(
+        err_msg.contains("sensor offline") || err_msg.contains("non-retriable"),
+        "unexpected error: {err_msg}"
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 6. Config validation — invalid configs should error
 // ═══════════════════════════════════════════════════════════════════
 
 fn parse_and_validate(yaml: &str) -> Result<()> {

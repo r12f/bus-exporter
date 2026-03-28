@@ -39,7 +39,7 @@ fn make_spi_metric(
         description: String::new(),
         metric_type: MetricType::Gauge,
         register_type: None,
-        address: 0,
+        address: None,
         data_type,
         byte_order: ByteOrder::BigEndian,
         scale: 1.0,
@@ -98,45 +98,6 @@ async fn test_read_with_scale_offset() {
     // bytes[1..3] = [0x00, 0x64] = 100 big-endian u16
     // 100 * 0.01 + (-40.0) = -39.0
     assert!((val - (-39.0)).abs() < f64::EPSILON);
-}
-
-#[tokio::test]
-async fn test_empty_command_rejected() {
-    let device = MockSpiDevice::new(HashMap::new());
-    let client = SpiClient::new(Box::new(device), "/dev/spidev0.0".into());
-
-    let metric = make_spi_metric("val", vec![], None, 0, DataType::U8);
-    let lock = make_device_lock();
-    let result = read_spi_metric(&client, &metric, &lock).await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("command must not be empty"));
-}
-
-#[tokio::test]
-async fn test_mid_endian_rejected() {
-    let device = MockSpiDevice::new(HashMap::new());
-    let client = SpiClient::new(Box::new(device), "/dev/spidev0.0".into());
-
-    let mut metric = make_spi_metric("val", vec![0x01, 0x00, 0x00, 0x00], None, 0, DataType::U32);
-    metric.byte_order = ByteOrder::MidBigEndian;
-
-    let lock = make_device_lock();
-    let result = read_spi_metric(&client, &metric, &lock).await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("mid-endian byte order is not supported for SPI"));
-}
-
-#[tokio::test]
-async fn test_response_offset_overflow_rejected() {
-    let device = MockSpiDevice::new(HashMap::new());
-    let client = SpiClient::new(Box::new(device), "/dev/spidev0.0".into());
-
-    // command len 2, response_length=2, offset=1, data_type=u16 (2 bytes) -> 1+2 > 2
-    let metric = make_spi_metric("val", vec![0x01, 0x02], Some(2), 1, DataType::U16);
-    let lock = make_device_lock();
-    let result = read_spi_metric(&client, &metric, &lock).await;
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("exceeds response_length"));
 }
 
 #[tokio::test]

@@ -7,6 +7,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{error, info, instrument, warn};
 
+use crate::bus;
 use crate::config::{self, RegisterType};
 use crate::decoder;
 use crate::i2c::{self, I2cClient};
@@ -23,30 +24,6 @@ const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Map config types to decoder/metrics types.
-fn map_byte_order(bo: config::ByteOrder) -> decoder::ByteOrder {
-    match bo {
-        config::ByteOrder::BigEndian => decoder::ByteOrder::BigEndian,
-        config::ByteOrder::LittleEndian => decoder::ByteOrder::LittleEndian,
-        config::ByteOrder::MidBigEndian => decoder::ByteOrder::MidBigEndian,
-        config::ByteOrder::MidLittleEndian => decoder::ByteOrder::MidLittleEndian,
-    }
-}
-
-fn map_data_type(dt: config::DataType) -> decoder::DataType {
-    match dt {
-        config::DataType::U8 => decoder::DataType::U8,
-        config::DataType::U16 => decoder::DataType::U16,
-        config::DataType::I16 => decoder::DataType::I16,
-        config::DataType::U32 => decoder::DataType::U32,
-        config::DataType::I32 => decoder::DataType::I32,
-        config::DataType::F32 => decoder::DataType::F32,
-        config::DataType::U64 => decoder::DataType::U64,
-        config::DataType::I64 => decoder::DataType::I64,
-        config::DataType::F64 => decoder::DataType::F64,
-        config::DataType::Bool => decoder::DataType::Bool,
-    }
-}
-
 fn map_metric_type(mt: config::MetricType) -> MetricType {
     match mt {
         config::MetricType::Gauge => MetricType::Gauge,
@@ -72,11 +49,11 @@ impl BusClient {
         match self {
             BusClient::Modbus(c) => c.connect().await,
             BusClient::I2c { client, .. } => {
-                use crate::modbus::ModbusConnection;
+                use crate::modbus::BusConnection;
                 client.connect().await
             }
             BusClient::Spi { client, .. } => {
-                use crate::modbus::ModbusConnection;
+                use crate::modbus::BusConnection;
                 client.connect().await
             }
         }
@@ -86,11 +63,11 @@ impl BusClient {
         match self {
             BusClient::Modbus(c) => c.disconnect().await,
             BusClient::I2c { client, .. } => {
-                use crate::modbus::ModbusConnection;
+                use crate::modbus::BusConnection;
                 client.disconnect().await
             }
             BusClient::Spi { client, .. } => {
-                use crate::modbus::ModbusConnection;
+                use crate::modbus::BusConnection;
                 client.disconnect().await
             }
         }
@@ -100,11 +77,11 @@ impl BusClient {
         match self {
             BusClient::Modbus(c) => c.is_connected(),
             BusClient::I2c { client, .. } => {
-                use crate::modbus::ModbusConnection;
+                use crate::modbus::BusConnection;
                 client.is_connected()
             }
             BusClient::Spi { client, .. } => {
-                use crate::modbus::ModbusConnection;
+                use crate::modbus::BusConnection;
                 client.is_connected()
             }
         }
@@ -115,14 +92,14 @@ impl BusClient {
 #[instrument(skip(client), fields(metric = %metric.name))]
 async fn read_metric(client: &mut dyn ModbusClient, metric: &config::Metric) -> Result<f64> {
     let count = metric.data_type.register_count();
-    let data_type = map_data_type(metric.data_type);
-    let byte_order = map_byte_order(metric.byte_order);
+    let data_type = bus::map_data_type(metric.data_type);
+    let byte_order = bus::map_byte_order(metric.byte_order);
     let register_type = metric.register_type.unwrap_or(RegisterType::Holding);
 
     match register_type {
         RegisterType::Holding => {
             let regs = client
-                .read_holding_registers(metric.address, count)
+                .read_holding_registers(metric.address.unwrap(), count)
                 .await
                 .context("reading holding registers")?;
             decoder::decode(&regs, data_type, byte_order, metric.scale, metric.offset)
@@ -130,7 +107,7 @@ async fn read_metric(client: &mut dyn ModbusClient, metric: &config::Metric) -> 
         }
         RegisterType::Input => {
             let regs = client
-                .read_input_registers(metric.address, count)
+                .read_input_registers(metric.address.unwrap(), count)
                 .await
                 .context("reading input registers")?;
             decoder::decode(&regs, data_type, byte_order, metric.scale, metric.offset)
@@ -138,7 +115,7 @@ async fn read_metric(client: &mut dyn ModbusClient, metric: &config::Metric) -> 
         }
         RegisterType::Coil => {
             let bits = client
-                .read_coils(metric.address, 1)
+                .read_coils(metric.address.unwrap(), 1)
                 .await
                 .context("reading coils")?;
             let val = bits
@@ -149,7 +126,7 @@ async fn read_metric(client: &mut dyn ModbusClient, metric: &config::Metric) -> 
         }
         RegisterType::Discrete => {
             let bits = client
-                .read_discrete_inputs(metric.address, 1)
+                .read_discrete_inputs(metric.address.unwrap(), 1)
                 .await
                 .context("reading discrete inputs")?;
             let val = bits
@@ -403,7 +380,7 @@ async fn run_collector(
 /// Factory trait for creating bus clients from config.
 /// This allows tests to inject mock clients.
 pub trait BusClientFactory: Send + Sync {
-    fn create(&self, collector: &config::Collector) -> BusClient;
+    fn create(&self, collector: &config::Collector) -> Result<BusClient>;
 }
 
 /// Handle for managing all collector tasks.
@@ -425,7 +402,13 @@ impl CollectorEngine {
         let mut handles = Vec::with_capacity(collectors.len());
 
         for collector_cfg in collectors {
-            let client = factory.create(&collector_cfg);
+            let client = match factory.create(&collector_cfg) {
+                Ok(c) => c,
+                Err(e) => {
+                    error!(collector = %collector_cfg.name, error = %e, "failed to create bus client, skipping collector");
+                    continue;
+                }
+            };
             let store = store.clone();
             let global_labels = global_labels.clone();
             let shutdown_rx = shutdown_tx.subscribe();

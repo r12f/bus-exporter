@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::bus;
 use crate::config;
 use crate::decoder;
 
@@ -138,38 +139,16 @@ pub async fn read_spi_metric(
     metric: &config::Metric,
     device_lock: &DeviceLock,
 ) -> Result<f64> {
-    let data_type = map_data_type(metric.data_type);
-    let byte_order = map_byte_order(metric.byte_order);
+    let data_type = bus::map_data_type(metric.data_type);
+    let byte_order = bus::map_byte_order(metric.byte_order);
 
-    // Reject mid-endian byte orders for SPI
-    if matches!(
-        metric.byte_order,
-        config::ByteOrder::MidBigEndian | config::ByteOrder::MidLittleEndian
-    ) {
-        anyhow::bail!(
-            "mid-endian byte order is not supported for SPI protocol (Modbus-specific)"
-        );
-    }
-
-    if metric.command.is_empty() {
-        anyhow::bail!("SPI metric '{}': command must not be empty", metric.name);
-    }
+    // All validation (mid-endian, empty command, response bounds) already done by config.
 
     let response_length = metric
         .response_length
         .unwrap_or(metric.command.len() as u16) as usize;
     let response_offset = metric.response_offset as usize;
     let num_bytes = decoder::byte_count(data_type);
-
-    if response_offset + num_bytes > response_length {
-        anyhow::bail!(
-            "SPI metric '{}': response_offset ({}) + data bytes ({}) exceeds response_length ({})",
-            metric.name,
-            response_offset,
-            num_bytes,
-            response_length
-        );
-    }
 
     // Build TX buffer: command bytes, zero-padded to response_length
     let mut tx_buf = metric.command.clone();
@@ -202,33 +181,9 @@ pub async fn read_spi_metric(
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-fn map_byte_order(bo: config::ByteOrder) -> decoder::ByteOrder {
-    match bo {
-        config::ByteOrder::BigEndian => decoder::ByteOrder::BigEndian,
-        config::ByteOrder::LittleEndian => decoder::ByteOrder::LittleEndian,
-        config::ByteOrder::MidBigEndian => decoder::ByteOrder::MidBigEndian,
-        config::ByteOrder::MidLittleEndian => decoder::ByteOrder::MidLittleEndian,
-    }
-}
-
-fn map_data_type(dt: config::DataType) -> decoder::DataType {
-    match dt {
-        config::DataType::U8 => decoder::DataType::U8,
-        config::DataType::U16 => decoder::DataType::U16,
-        config::DataType::I16 => decoder::DataType::I16,
-        config::DataType::U32 => decoder::DataType::U32,
-        config::DataType::I32 => decoder::DataType::I32,
-        config::DataType::F32 => decoder::DataType::F32,
-        config::DataType::U64 => decoder::DataType::U64,
-        config::DataType::I64 => decoder::DataType::I64,
-        config::DataType::F64 => decoder::DataType::F64,
-        config::DataType::Bool => decoder::DataType::Bool,
-    }
-}
-
-/// Connection/lifecycle trait impl for SpiClient (mirrors ModbusConnection).
+/// Connection/lifecycle trait impl for SpiClient (mirrors BusConnection).
 #[async_trait]
-impl crate::modbus::ModbusConnection for SpiClient {
+impl crate::modbus::BusConnection for SpiClient {
     async fn connect(&mut self) -> Result<()> {
         self.connected = true;
         Ok(())

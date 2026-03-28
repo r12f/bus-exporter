@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::bus;
 use crate::config;
 use crate::decoder;
 
@@ -131,27 +132,11 @@ pub async fn read_i2c_metric(
     metric: &config::Metric,
     bus_lock: &BusLock,
 ) -> Result<f64> {
-    let data_type = map_data_type(metric.data_type);
-    let byte_order = map_byte_order(metric.byte_order);
+    let data_type = bus::map_data_type(metric.data_type);
+    let byte_order = bus::map_byte_order(metric.byte_order);
 
-    // Validate that metric address fits in u8 (I2C register addresses are 8-bit)
-    if metric.address > 0xFF {
-        anyhow::bail!(
-            "I2C register address {:#06x} exceeds u8 range (max 0xFF)",
-            metric.address
-        );
-    }
-    let register = metric.address as u8;
-
-    // Reject mid-endian byte orders for I2C (Modbus-specific concept)
-    if matches!(
-        metric.byte_order,
-        config::ByteOrder::MidBigEndian | config::ByteOrder::MidLittleEndian
-    ) {
-        anyhow::bail!(
-            "mid-endian byte order is not supported for I2C protocol (Modbus-specific)"
-        );
-    }
+    // address validated as present and in u8 range by config
+    let register = metric.address.unwrap() as u8;
 
     let num_bytes = decoder::byte_count(data_type);
     let scale = metric.scale;
@@ -181,33 +166,9 @@ pub async fn read_i2c_metric(
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-fn map_byte_order(bo: config::ByteOrder) -> decoder::ByteOrder {
-    match bo {
-        config::ByteOrder::BigEndian => decoder::ByteOrder::BigEndian,
-        config::ByteOrder::LittleEndian => decoder::ByteOrder::LittleEndian,
-        config::ByteOrder::MidBigEndian => decoder::ByteOrder::MidBigEndian,
-        config::ByteOrder::MidLittleEndian => decoder::ByteOrder::MidLittleEndian,
-    }
-}
-
-fn map_data_type(dt: config::DataType) -> decoder::DataType {
-    match dt {
-        config::DataType::U8 => decoder::DataType::U8,
-        config::DataType::U16 => decoder::DataType::U16,
-        config::DataType::I16 => decoder::DataType::I16,
-        config::DataType::U32 => decoder::DataType::U32,
-        config::DataType::I32 => decoder::DataType::I32,
-        config::DataType::F32 => decoder::DataType::F32,
-        config::DataType::U64 => decoder::DataType::U64,
-        config::DataType::I64 => decoder::DataType::I64,
-        config::DataType::F64 => decoder::DataType::F64,
-        config::DataType::Bool => decoder::DataType::Bool,
-    }
-}
-
-/// Connection/lifecycle trait impl for I2cClient (mirrors ModbusConnection).
+/// Connection/lifecycle trait impl for I2cClient (mirrors BusConnection).
 #[async_trait]
-impl crate::modbus::ModbusConnection for I2cClient {
+impl crate::modbus::BusConnection for I2cClient {
     async fn connect(&mut self) -> Result<()> {
         self.connected = true;
         Ok(())

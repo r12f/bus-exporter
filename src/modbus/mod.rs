@@ -31,12 +31,12 @@ pub fn validate_coil_count(count: u16) -> Result<()> {
     Ok(())
 }
 
-/// Lifecycle management for Modbus clients.
+/// Lifecycle management for bus clients (Modbus, I2C, SPI).
 ///
 /// Separated from [`ModbusReader`] so callers can hold a narrow read-only
 /// interface when lifecycle control is not needed.
 #[async_trait]
-pub trait ModbusConnection: Send {
+pub trait BusConnection: Send {
     /// Establish the connection.
     ///
     /// If already connected, the previous connection is closed first
@@ -86,5 +86,5 @@ pub trait ModbusReader: Send {
 }
 
 /// Combined trait for convenience — a full Modbus client.
-pub trait ModbusClient: ModbusConnection + ModbusReader {}
-impl<T: ModbusConnection + ModbusReader> ModbusClient for T {}
+pub trait ModbusClient: BusConnection + ModbusReader {}
+impl<T: BusConnection + ModbusReader> ModbusClient for T {}

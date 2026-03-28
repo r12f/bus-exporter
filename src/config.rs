@@ -324,8 +324,7 @@ pub struct Metric {
     #[serde(rename = "type")]
     pub metric_type: MetricType,
     pub register_type: Option<RegisterType>,
-    #[serde(default)]
-    pub address: u16,
+    pub address: Option<u16>,
     pub data_type: DataType,
     #[serde(default = "default_byte_order")]
     pub byte_order: ByteOrder,
@@ -488,7 +487,7 @@ impl RawMetric {
             .register_type
             .or_else(|| d.and_then(|d| d.register_type));
 
-        let address = self.address.unwrap_or(0);
+        let address = self.address;
 
         let data_type = self
             .data_type
@@ -800,6 +799,15 @@ impl Config {
             let is_spi = matches!(c.protocol, Protocol::Spi { .. });
             let is_modbus = !is_i2c && !is_spi;
             for m in &c.metrics {
+                // Address is required for Modbus and I2C protocols
+                if !is_spi && m.address.is_none() {
+                    bail!(
+                        "collector '{}', metric '{}': address is required for {} protocol",
+                        c.name,
+                        m.name,
+                        if is_i2c { "I2C" } else { "Modbus" }
+                    );
+                }
                 // Modbus-specific validations
                 if is_modbus {
                     let register_type = m.register_type.unwrap_or(RegisterType::Holding);
@@ -852,12 +860,12 @@ impl Config {
                 // I2C-specific validations
                 if is_i2c {
                     // Validate metric address fits in u8 (I2C register addresses are 8-bit)
-                    if m.address > 0xFF {
+                    if m.address.unwrap() > 0xFF {
                         bail!(
                             "collector '{}', metric '{}': I2C register address {:#06x} exceeds u8 range (max 0xFF)",
                             c.name,
                             m.name,
-                            m.address
+                            m.address.unwrap()
                         );
                     }
                     // Mid-endian byte orders are Modbus-specific (word-swapped)
@@ -917,12 +925,12 @@ impl Config {
                 // Validate multi-register address overflow (Modbus only)
                 if is_modbus {
                     let reg_count = m.data_type.register_count();
-                    if m.address as u32 + reg_count as u32 > 65536 {
+                    if m.address.unwrap() as u32 + reg_count as u32 > 65536 {
                         bail!(
                             "collector '{}', metric '{}': address {} + {} registers exceeds 65535",
                             c.name,
                             m.name,
-                            m.address,
+                            m.address.unwrap(),
                             reg_count
                         );
                     }

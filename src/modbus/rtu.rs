@@ -5,7 +5,7 @@ use tokio_modbus::Slave;
 use tokio_serial::SerialPortBuilder;
 
 use super::{
-    validate_coil_count, validate_register_count, ModbusConnection, ModbusReader, READ_TIMEOUT,
+    validate_coil_count, validate_register_count, BusConnection, ModbusReader, READ_TIMEOUT,
 };
 
 /// Modbus RTU (serial) client.
@@ -40,7 +40,7 @@ impl RtuClient {
 }
 
 #[async_trait]
-impl ModbusConnection for RtuClient {
+impl BusConnection for RtuClient {
     async fn connect(&mut self) -> Result<()> {
         if self.context.is_some() {
             self.disconnect().await.ok();

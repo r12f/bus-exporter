@@ -2,7 +2,7 @@ use super::*;
 use crate::config::{
     ByteOrder, Collector, DataType, Metric, MetricType as ConfigMetricType, Protocol, RegisterType,
 };
-use crate::modbus::{ModbusConnection, ModbusReader};
+use crate::modbus::{BusConnection, ModbusReader};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ impl MockModbusClient {
 }
 
 #[async_trait]
-impl ModbusConnection for MockModbusClient {
+impl BusConnection for MockModbusClient {
     async fn connect(&mut self) -> Result<()> {
         let mut count = self.connect_fail_count.lock().unwrap();
         if *count > 0 {
@@ -118,7 +118,7 @@ fn test_collector_config(name: &str) -> Collector {
             description: "Temperature sensor".to_string(),
             metric_type: ConfigMetricType::Gauge,
             register_type: Some(RegisterType::Holding),
-            address: 100,
+            address: Some(100),
             data_type: DataType::U16,
             byte_order: ByteOrder::BigEndian,
             scale: 0.1,
@@ -136,13 +136,13 @@ struct MockFactory {
 }
 
 impl BusClientFactory for MockFactory {
-    fn create(&self, _collector: &Collector) -> BusClient {
+    fn create(&self, _collector: &Collector) -> anyhow::Result<BusClient> {
         let client = self.clients
             .lock()
             .unwrap()
             .pop()
             .expect("no mock clients left");
-        BusClient::Modbus(client)
+        Ok(BusClient::Modbus(client))
     }
 }
 

@@ -40,7 +40,7 @@ fn make_metric(name: &str, address: u16, data_type: DataType) -> Metric {
         description: String::new(),
         metric_type: MetricType::Gauge,
         register_type: None,
-        address,
+        address: Some(address),
         data_type,
         byte_order: ByteOrder::BigEndian,
         scale: 1.0,
@@ -161,40 +161,3 @@ async fn test_read_f32() {
     assert!((result - 3.14_f64).abs() < 0.001);
 }
 
-#[tokio::test]
-async fn test_mid_endian_rejected_for_i2c() {
-    let mut responses = HashMap::new();
-    responses.insert(0x10, vec![0x00, 0x01, 0x00, 0x02]);
-    let device = MockI2cDevice::new(responses);
-    let client = I2cClient::new(Box::new(device), "/dev/i2c-1".into(), 0x50);
-
-    let mut metric = make_metric("val", 0x10, DataType::U32);
-    metric.byte_order = ByteOrder::MidBigEndian;
-
-    let bus_lock = make_bus_lock();
-    let result = read_i2c_metric(&client, &metric, &bus_lock).await;
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("mid-endian byte order is not supported for I2C")
-    );
-}
-
-#[tokio::test]
-async fn test_address_overflow_rejected() {
-    let device = MockI2cDevice::new(HashMap::new());
-    let client = I2cClient::new(Box::new(device), "/dev/i2c-1".into(), 0x50);
-
-    let metric = make_metric("val", 0x1FF, DataType::U8); // > 0xFF
-    let bus_lock = make_bus_lock();
-    let result = read_i2c_metric(&client, &metric, &bus_lock).await;
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("exceeds u8 range")
-    );
-}

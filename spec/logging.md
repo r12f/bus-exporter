@@ -21,7 +21,7 @@ Use the `#[instrument]` attribute on functions instead of manually creating span
 
 ```rust
 #[instrument(skip(client), fields(collector = %name, slave_id))]
-async fn poll_collector(name: &str, slave_id: u8, client: &mut ModbusClient) -> Result<()> { ... }
+async fn poll_collector(name: &str, slave_id: u8, client: &mut dyn BusConnection) -> Result<()> { ... }
 
 #[instrument(fields(metric = %metric.name, address = metric.address))]
 fn decode_register(metric: &MetricConfig, raw: &[u16]) -> Result<f64> { ... }

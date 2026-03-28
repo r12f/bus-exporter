@@ -44,7 +44,7 @@ The Modbus module provides async clients for RTU (serial) and TCP protocols, abs
 
 ```rust
 #[async_trait]
-pub trait ModbusClient: Send {
+pub trait BusConnection: Send {
     async fn read_holding_registers(&mut self, addr: u16, count: u16) -> Result<Vec<u16>>;
     async fn read_input_registers(&mut self, addr: u16, count: u16) -> Result<Vec<u16>>;
     async fn read_coils(&mut self, addr: u16, count: u16) -> Result<Vec<bool>>;

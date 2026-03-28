@@ -9,7 +9,7 @@ exporters:
 collectors:
   - name: test
     protocol:
-      type: tcp
+      type: modbus-tcp
       endpoint: "localhost:502"
     slave_id: 1
     metrics:
@@ -36,7 +36,7 @@ fn parse(yaml: &str) -> Result<Config> {
 fn test_parse_minimal() {
     let c = parse(&minimal_yaml()).unwrap();
     assert_eq!(c.collectors.len(), 1);
-    assert_eq!(c.collectors[0].slave_id, 1);
+    assert_eq!(c.collectors[0].slave_id, Some(1));
     assert_eq!(c.collectors[0].polling_interval.as_secs(), 10);
     assert_eq!(c.collectors[0].metrics[0].scale, 1.0);
     assert_eq!(c.collectors[0].metrics[0].byte_order, ByteOrder::BigEndian);
@@ -65,7 +65,7 @@ exporters:
 collectors:
   - name: inv
     protocol:
-      type: tcp
+      type: modbus-tcp
       endpoint: "192.168.1.10:502"
     slave_id: 1
     polling_interval: "5s"
@@ -84,7 +84,7 @@ collectors:
         unit: "V"
   - name: meter
     protocol:
-      type: rtu
+      type: modbus-rtu
       device: "/dev/ttyUSB0"
       bps: 19200
       data_bits: 8
@@ -105,7 +105,7 @@ collectors:
     assert_eq!(c.logging.syslog_facility, SyslogFacility::Local0);
     assert_eq!(c.collectors.len(), 2);
     match &c.collectors[1].protocol {
-        Protocol::Rtu { bps, parity, .. } => {
+        Protocol::ModbusRtu { bps, parity, .. } => {
             assert_eq!(*bps, 19200);
             assert_eq!(*parity, Parity::Even);
         }
@@ -121,7 +121,7 @@ exporters:
     enabled: false
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "localhost:502" }
+    protocol: { type: modbus-tcp, endpoint: "localhost:502" }
     slave_id: 1
     metrics:
       - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
@@ -148,11 +148,11 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: d
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics: [{ name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }]
   - name: d
-    protocol: { type: tcp, endpoint: "b:502" }
+    protocol: { type: modbus-tcp, endpoint: "b:502" }
     slave_id: 2
     metrics: [{ name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }]
 "#;
@@ -178,7 +178,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: m, type: gauge, register_type: coil, address: 0, data_type: u16 }
@@ -196,7 +196,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: m, type: gauge, register_type: holding, address: 0, data_type: bool }
@@ -214,7 +214,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: d, type: gauge, register_type: holding, address: 0, data_type: u16 }
@@ -226,7 +226,7 @@ collectors:
     assert_eq!(metrics[0].name, "d");
     // Last entry wins: counter at address 1
     assert_eq!(metrics[0].metric_type, crate::config::MetricType::Counter);
-    assert_eq!(metrics[0].address, 1);
+    assert_eq!(metrics[0].address, Some(1));
 }
 
 #[test]
@@ -236,7 +236,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics: []
 "#;
@@ -253,7 +253,7 @@ exporters:
   otlp: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
@@ -279,14 +279,14 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: rtu, device: "/dev/ttyUSB0" }
+    protocol: { type: modbus-rtu, device: "/dev/ttyUSB0" }
     slave_id: 1
     metrics:
       - { name: c, type: gauge, register_type: coil, address: 0, data_type: bool }
 "#;
     let c = parse(y).unwrap();
     match &c.collectors[0].protocol {
-        Protocol::Rtu {
+        Protocol::ModbusRtu {
             bps,
             data_bits,
             stop_bits,
@@ -311,7 +311,7 @@ exporters:
   prometheus: {{ enabled: true }}
 collectors:
   - name: t
-    protocol: {{ type: tcp, endpoint: "a:502" }}
+    protocol: {{ type: modbus-tcp, endpoint: "a:502" }}
     slave_id: 1
     metrics:
       - {{ name: m, type: gauge, register_type: holding, address: 0, data_type: {dt} }}
@@ -335,7 +335,7 @@ exporters:
   prometheus: {{ enabled: true }}
 collectors:
   - name: t
-    protocol: {{ type: tcp, endpoint: "a:502" }}
+    protocol: {{ type: modbus-tcp, endpoint: "a:502" }}
     slave_id: 1
     metrics:
       - {{ name: m, type: gauge, register_type: holding, address: 0, data_type: u32, byte_order: {bo} }}
@@ -357,7 +357,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
@@ -374,7 +374,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
@@ -391,7 +391,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
@@ -413,7 +413,7 @@ exporters:
   prometheus: {{ enabled: true }}
 collectors:
   - name: t
-    protocol: {{ type: tcp, endpoint: "a:502" }}
+    protocol: {{ type: modbus-tcp, endpoint: "a:502" }}
     slave_id: 1
     metrics:
       - {{ name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }}
@@ -436,7 +436,7 @@ exporters:
   prometheus: {{ enabled: true }}
 collectors:
   - name: t
-    protocol: {{ type: tcp, endpoint: "a:502" }}
+    protocol: {{ type: modbus-tcp, endpoint: "a:502" }}
     slave_id: 1
     metrics:
       - {{ name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }}
@@ -453,7 +453,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: rtu, device: "/dev/ttyUSB0", data_bits: 4 }
+    protocol: { type: modbus-rtu, device: "/dev/ttyUSB0", data_bits: 4 }
     slave_id: 1
     metrics:
       - { name: c, type: gauge, register_type: coil, address: 0, data_type: bool }
@@ -471,7 +471,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: rtu, device: "/dev/ttyUSB0", stop_bits: 3 }
+    protocol: { type: modbus-rtu, device: "/dev/ttyUSB0", stop_bits: 3 }
     slave_id: 1
     metrics:
       - { name: c, type: gauge, register_type: coil, address: 0, data_type: bool }
@@ -489,7 +489,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16, scale: 0.0 }
@@ -507,7 +507,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     polling_interval: "0s"
     metrics:
@@ -516,7 +516,7 @@ collectors:
     assert!(parse(y)
         .unwrap_err()
         .to_string()
-        .contains("polling_interval must be at least 100ms"));
+        .contains("polling_interval must be at least 1ms"));
 }
 
 #[test]
@@ -526,28 +526,28 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
-    polling_interval: "50ms"
+    polling_interval: "0ms"
     metrics:
       - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
 "#;
     assert!(parse(y)
         .unwrap_err()
         .to_string()
-        .contains("polling_interval must be at least 100ms"));
+        .contains("polling_interval must be at least 1ms"));
 }
 
 #[test]
-fn test_polling_interval_100ms_ok() {
+fn test_polling_interval_1ms_ok() {
     let y = r#"
 exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
-    polling_interval: "100ms"
+    polling_interval: "1ms"
     metrics:
       - { name: v, type: gauge, register_type: holding, address: 0, data_type: u16 }
 "#;
@@ -561,7 +561,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: m, type: counter, register_type: coil, address: 0, data_type: bool }
@@ -579,7 +579,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: m, type: counter, register_type: discrete, address: 0, data_type: bool }
@@ -597,7 +597,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: m, type: gauge, register_type: holding, address: 65535, data_type: u32 }
@@ -612,7 +612,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: m, type: gauge, register_type: holding, address: 65533, data_type: u64 }
@@ -628,7 +628,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: m, type: gauge, register_type: holding, address: 65534, data_type: u32 }
@@ -644,7 +644,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: t
-    protocol: { type: tcp, endpoint: "a:502" }
+    protocol: { type: modbus-tcp, endpoint: "a:502" }
     slave_id: 1
     metrics:
       - { name: m, type: gauge, register_type: holding, address: 65535, data_type: u16 }
@@ -693,7 +693,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: test
-    protocol: { type: tcp, endpoint: "localhost:502" }
+    protocol: { type: modbus-tcp, endpoint: "localhost:502" }
     slave_id: 1
     metrics_files:
       - "devices/meter.yaml"
@@ -703,7 +703,7 @@ collectors:
     assert_eq!(config.collectors[0].metrics.len(), 2);
     let v = &config.collectors[0].metrics[0];
     assert_eq!(v.name, "voltage");
-    assert_eq!(v.register_type, RegisterType::Holding);
+    assert_eq!(v.register_type, Some(RegisterType::Holding));
     assert_eq!(v.data_type, DataType::F32);
     assert_eq!(v.metric_type, MetricType::Gauge);
     assert_eq!(v.unit, "V");
@@ -750,7 +750,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: test
-    protocol: { type: tcp, endpoint: "localhost:502" }
+    protocol: { type: modbus-tcp, endpoint: "localhost:502" }
     slave_id: 1
     metrics_files:
       - "base.yaml"
@@ -765,8 +765,8 @@ collectors:
         .iter()
         .find(|m| m.name == "voltage")
         .unwrap();
-    assert_eq!(v.register_type, RegisterType::Input);
-    assert_eq!(v.address, 100);
+    assert_eq!(v.register_type, Some(RegisterType::Input));
+    assert_eq!(v.address, Some(100));
     // description should be empty (full replacement, not inherited)
     assert_eq!(v.description, "");
     // current from base.yaml
@@ -775,7 +775,7 @@ collectors:
         .iter()
         .find(|m| m.name == "current")
         .unwrap();
-    assert_eq!(c.address, 6);
+    assert_eq!(c.address, Some(6));
 }
 
 #[test]
@@ -799,7 +799,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: test
-    protocol: { type: tcp, endpoint: "localhost:502" }
+    protocol: { type: modbus-tcp, endpoint: "localhost:502" }
     slave_id: 1
     metrics_files:
       - "meter.yaml"
@@ -814,9 +814,9 @@ collectors:
     let config = Config::load(&config_path).unwrap();
     assert_eq!(config.collectors[0].metrics.len(), 1);
     let v = &config.collectors[0].metrics[0];
-    assert_eq!(v.register_type, RegisterType::Input);
+    assert_eq!(v.register_type, Some(RegisterType::Input));
     assert_eq!(v.data_type, DataType::U16);
-    assert_eq!(v.address, 200);
+    assert_eq!(v.address, Some(200));
 }
 
 #[test]
@@ -854,7 +854,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: test
-    protocol: { type: tcp, endpoint: "localhost:502" }
+    protocol: { type: modbus-tcp, endpoint: "localhost:502" }
     slave_id: 1
     metrics_files:
       - "base.yaml"
@@ -889,7 +889,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: test
-    protocol: { type: tcp, endpoint: "localhost:502" }
+    protocol: { type: modbus-tcp, endpoint: "localhost:502" }
     slave_id: 1
     metrics_files:
       - "subdir/devices/meter.yaml"
@@ -907,7 +907,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: test
-    protocol: { type: tcp, endpoint: "localhost:502" }
+    protocol: { type: modbus-tcp, endpoint: "localhost:502" }
     slave_id: 1
     metrics_files:
       - "nonexistent.yaml"
@@ -930,7 +930,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: test
-    protocol: { type: tcp, endpoint: "localhost:502" }
+    protocol: { type: modbus-tcp, endpoint: "localhost:502" }
     slave_id: 1
     metrics_files:
       - "empty.yaml"
@@ -974,7 +974,7 @@ exporters:
   prometheus: { enabled: true }
 collectors:
   - name: test
-    protocol: { type: tcp, endpoint: "localhost:502" }
+    protocol: { type: modbus-tcp, endpoint: "localhost:502" }
     slave_id: 1
     metrics_files:
       - "meter.yaml"
@@ -1010,7 +1010,7 @@ exporters:
 collectors:
   - name: test
     protocol:
-      type: tcp
+      type: modbus-tcp
       endpoint: "localhost:502"
     slave_id: 1
     metrics:
@@ -1021,6 +1021,100 @@ collectors:
         data_type: u16
 "#
     .to_string()
+}
+
+// ── Config search path tests ──────────────────────────────────────────
+
+#[test]
+fn find_config_explicit_path_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("my.yaml");
+    std::fs::write(&cfg, "").unwrap();
+    let result = find_config_file(Some(cfg.as_path()));
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), cfg);
+}
+
+#[test]
+fn find_config_explicit_path_missing() {
+    let result = find_config_file(Some(Path::new("/nonexistent/config.yaml")));
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("specified config file not found"), "{msg}");
+}
+
+#[test]
+fn find_config_fallback_cwd() {
+    let dir = tempfile::tempdir().unwrap();
+    let old_dir = std::env::current_dir().unwrap();
+    std::fs::write(dir.path().join("config.yaml"), "").unwrap();
+    std::env::set_current_dir(dir.path()).unwrap();
+    let result = find_config_file(None);
+    std::env::set_current_dir(&old_dir).unwrap();
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap(), PathBuf::from("./config.yaml"));
+}
+
+#[test]
+fn find_config_fallback_none_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let old_dir = std::env::current_dir().unwrap();
+    // empty dir, no config.yaml
+    std::env::set_current_dir(dir.path()).unwrap();
+    // Override HOME so ~/.config path won't match
+    let old_home = std::env::var("HOME").ok();
+    std::env::set_var("HOME", dir.path());
+    let result = find_config_file(None);
+    std::env::set_current_dir(&old_dir).unwrap();
+    if let Some(h) = old_home {
+        std::env::set_var("HOME", h);
+    }
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("no config file found"), "{msg}");
+}
+
+#[test]
+fn resolve_metrics_files_relative_to_config_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let metrics_dir = dir.path().join("metrics");
+    std::fs::create_dir_all(&metrics_dir).unwrap();
+    let metrics_file = metrics_dir.join("test.yaml");
+    std::fs::write(
+        &metrics_file,
+        r#"
+metrics:
+  - name: temp
+    type: gauge
+    register_type: holding
+    address: 0
+    data_type: u16
+"#,
+    )
+    .unwrap();
+
+    let config_yaml = format!(
+        r#"
+exporters:
+  prometheus:
+    enabled: true
+collectors:
+  - name: test
+    protocol:
+      type: modbus-tcp
+      endpoint: "localhost:502"
+    slave_id: 1
+    metrics_files:
+      - metrics/test.yaml
+    metrics: []
+"#
+    );
+
+    let config_path = dir.path().join("config.yaml");
+    std::fs::write(&config_path, &config_yaml).unwrap();
+    let config = Config::load(&config_path).unwrap();
+    assert_eq!(config.collectors[0].metrics.len(), 1);
+    assert_eq!(config.collectors[0].metrics[0].name, "temp");
 }
 
 #[test]
@@ -1059,7 +1153,7 @@ exporters:
 collectors:
   - name: test
     protocol:
-      type: tcp
+      type: modbus-tcp
       endpoint: "localhost:502"
     slave_id: 1
     metrics:
@@ -1093,7 +1187,7 @@ exporters:
 collectors:
   - name: test
     protocol:
-      type: tcp
+      type: modbus-tcp
       endpoint: "localhost:502"
     slave_id: 1
     metrics:
@@ -1121,7 +1215,7 @@ exporters:
 collectors:
   - name: test
     protocol:
-      type: tcp
+      type: modbus-tcp
       endpoint: "localhost:502"
     slave_id: 1
     metrics:

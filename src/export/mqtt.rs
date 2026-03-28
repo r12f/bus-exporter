@@ -1,9 +1,11 @@
+use std::sync::Arc;
 use std::time::Duration;
 
+use rumqttc::tokio_rustls::rustls::{self, ClientConfig, RootCertStore};
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS, Transport};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::config::MqttExporter;
 use crate::metrics::MetricStore;
@@ -61,32 +63,124 @@ fn parse_endpoint(endpoint: &str) -> (String, u16, bool) {
     (rest.to_string(), default_port, tls)
 }
 
+/// A certificate verifier that accepts any server certificate (insecure mode).
+#[derive(Debug)]
+struct NoVerifier;
+
+impl rustls::client::danger::ServerCertVerifier for NoVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        rustls::crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
 fn build_tls_config(
     tls_cfg: Option<&crate::config::MqttTls>,
 ) -> Result<rumqttc::TlsConfiguration, String> {
-    let ca = match tls_cfg.and_then(|t| t.ca_cert.as_ref()) {
-        Some(path) => {
-            std::fs::read(path).map_err(|e| format!("failed to read ca_cert '{}': {}", path, e))?
+    let insecure = tls_cfg.map(|t| t.insecure).unwrap_or(false);
+
+    let builder = ClientConfig::builder();
+
+    let config = if insecure {
+        builder
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoVerifier))
+    } else {
+        // Build root cert store
+        let mut root_store = RootCertStore::empty();
+
+        if let Some(ca_path) = tls_cfg.and_then(|t| t.ca_cert.as_ref()) {
+            let ca_bytes = std::fs::read(ca_path)
+                .map_err(|e| format!("failed to read ca_cert '{}': {}", ca_path, e))?;
+            let mut cursor = std::io::Cursor::new(&ca_bytes);
+            let certs = rustls_pemfile::certs(&mut cursor);
+            let mut added = 0;
+            for cert_result in certs {
+                let cert = cert_result
+                    .map_err(|e| format!("failed to parse certificate in '{}': {}", ca_path, e))?;
+                root_store
+                    .add(cert)
+                    .map_err(|e| format!("failed to add CA cert from '{}': {}", ca_path, e))?;
+                added += 1;
+            }
+            if added == 0 {
+                return Err(format!("no valid certificates found in '{}'", ca_path));
+            }
+        } else {
+            // Fall back to system root certificates
+            let native_certs = rustls_native_certs::load_native_certs()
+                .map_err(|e| format!("failed to load system root certificates: {}", e))?;
+            for cert in native_certs {
+                let _ = root_store.add(cert);
+            }
+            if root_store.is_empty() {
+                return Err(
+                    "no system root certificates found and no ca_cert specified".to_string()
+                );
+            }
         }
-        None => Vec::new(),
+
+        builder.with_root_certificates(root_store)
     };
 
-    let client_auth = match tls_cfg {
+    // Add client auth if configured
+    let config = match tls_cfg {
         Some(t) if t.client_cert.is_some() && t.client_key.is_some() => {
-            let cert = std::fs::read(t.client_cert.as_ref().unwrap())
+            let cert_path = t.client_cert.as_ref().unwrap();
+            let key_path = t.client_key.as_ref().unwrap();
+            let cert_bytes = std::fs::read(cert_path)
                 .map_err(|e| format!("failed to read client_cert: {}", e))?;
-            let key = std::fs::read(t.client_key.as_ref().unwrap())
-                .map_err(|e| format!("failed to read client_key: {}", e))?;
-            Some((cert, key))
+            let key_bytes =
+                std::fs::read(key_path).map_err(|e| format!("failed to read client_key: {}", e))?;
+
+            let mut cert_cursor = std::io::Cursor::new(&cert_bytes);
+            let certs: Vec<_> = rustls_pemfile::certs(&mut cert_cursor)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("failed to parse client_cert: {}", e))?;
+
+            let mut key_cursor = std::io::Cursor::new(&key_bytes);
+            let key = rustls_pemfile::private_key(&mut key_cursor)
+                .map_err(|e| format!("failed to parse client_key: {}", e))?
+                .ok_or_else(|| "no private key found in client_key file".to_string())?;
+
+            config
+                .with_client_auth_cert(certs, key)
+                .map_err(|e| format!("failed to configure client auth: {}", e))?
         }
-        _ => None,
+        _ => config.with_no_client_auth(),
     };
 
-    Ok(rumqttc::TlsConfiguration::Simple {
-        ca,
-        alpn: None,
-        client_auth,
-    })
+    Ok(rumqttc::TlsConfiguration::Rustls(Arc::new(config)))
 }
 
 pub async fn run_mqtt_exporter(
@@ -106,10 +200,10 @@ pub async fn run_mqtt_exporter(
     let client_id = config
         .client_id
         .clone()
-        .unwrap_or_else(|| "modbus-exporter".to_string());
+        .unwrap_or_else(|| "bus-exporter".to_string());
 
     let mut mqttoptions = MqttOptions::new(&client_id, &host, port);
-    mqttoptions.set_keep_alive(config.timeout);
+    mqttoptions.set_keep_alive(Duration::from_secs(60));
 
     if let Some(auth) = &config.auth {
         mqttoptions.set_credentials(&auth.username, &auth.password);
@@ -155,7 +249,15 @@ pub async fn run_mqtt_exporter(
                             Ok(Event::Incoming(Packet::ConnAck(_))) => {}
                             Ok(_) => {}
                             Err(e) => {
-                                warn!(%e, "mqtt eventloop error");
+                                let err_str = format!("{e}");
+                                if err_str.contains("NotAuthorized")
+                                    || err_str.contains("BadUserNamePassword")
+                                    || err_str.contains("Authentication")
+                                {
+                                    error!(%e, "mqtt authentication failure");
+                                } else {
+                                    warn!(%e, "mqtt eventloop error");
+                                }
                                 let _ = connected_tx.send(false);
                                 break;
                             }

@@ -1,11 +1,11 @@
 [package]
-name = "modbus-exporter"
+name = "bus-exporter"
 version = "0.1.2"
 edition = "2021"
 license = "Apache-2.0"
-description = "A Modbus RTU/TCP to OpenTelemetry metrics exporter with Prometheus scrape endpoint"
-repository = "https://github.com/r12f/modbus-exporter"
-homepage = "https://github.com/r12f/modbus-exporter"
+description = "A hardware bus metrics exporter (Modbus RTU/TCP, I2C, SPI) with OTLP and Prometheus export"
+repository = "https://github.com/r12f/bus-exporter"
+homepage = "https://github.com/r12f/bus-exporter"
 keywords = ["modbus", "opentelemetry", "prometheus", "metrics", "exporter"]
 categories = ["network-programming"]
 
@@ -33,6 +33,15 @@ tokio-util = "0.7"
 bytes = "1"
 futures = "0.3"
 rumqttc = "0.24"
+rustls-native-certs = "0.7"
+rustls-pemfile = "2"
+libc = "0.2.183"
+spidev = "0.6"
 
 [dev-dependencies]
 tempfile = "3"
+tokio-modbus = { version = "0.14", features = ["tcp-server"] }
+reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+log = "0.4"

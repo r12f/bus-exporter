@@ -79,22 +79,22 @@ fn test_render_prometheus_contains_expected_metrics() {
 
     let output = m.render_prometheus();
 
-    assert!(output.contains("modbus_exporter_collectors_total 3"));
-    assert!(output.contains("modbus_exporter_uptime_seconds"));
-    assert!(output.contains("modbus_exporter_polls_total{collector=\"meter_1\"} 42"));
-    assert!(output.contains("modbus_exporter_polls_success_total{collector=\"meter_1\"} 40"));
-    assert!(output.contains("modbus_exporter_polls_error_total{collector=\"meter_1\"} 2"));
-    assert!(output.contains("modbus_exporter_modbus_requests_total{collector=\"meter_1\"} 100"));
-    assert!(output.contains("modbus_exporter_modbus_errors_total{collector=\"meter_1\"} 3"));
-    assert!(output.contains("modbus_exporter_poll_duration_seconds{collector=\"meter_1\"} 0.5"));
-    assert!(output.contains("modbus_exporter_otlp_exports_total 10"));
-    assert!(output.contains("modbus_exporter_otlp_errors_total 1"));
-    assert!(output.contains("modbus_exporter_prometheus_scrapes_total 5"));
+    assert!(output.contains("bus_exporter_collectors_total 3"));
+    assert!(output.contains("bus_exporter_uptime_seconds"));
+    assert!(output.contains("bus_exporter_polls_total{collector=\"meter_1\"} 42"));
+    assert!(output.contains("bus_exporter_polls_success_total{collector=\"meter_1\"} 40"));
+    assert!(output.contains("bus_exporter_polls_error_total{collector=\"meter_1\"} 2"));
+    assert!(output.contains("bus_exporter_modbus_requests_total{collector=\"meter_1\"} 100"));
+    assert!(output.contains("bus_exporter_modbus_errors_total{collector=\"meter_1\"} 3"));
+    assert!(output.contains("bus_exporter_poll_duration_seconds{collector=\"meter_1\"} 0.5"));
+    assert!(output.contains("bus_exporter_otlp_exports_total 10"));
+    assert!(output.contains("bus_exporter_otlp_errors_total 1"));
+    assert!(output.contains("bus_exporter_prometheus_scrapes_total 5"));
 
     // Check TYPE annotations
-    assert!(output.contains("# TYPE modbus_exporter_collectors_total gauge"));
-    assert!(output.contains("# TYPE modbus_exporter_polls_total counter"));
-    assert!(output.contains("# TYPE modbus_exporter_uptime_seconds gauge"));
+    assert!(output.contains("# TYPE bus_exporter_collectors_total gauge"));
+    assert!(output.contains("# TYPE bus_exporter_polls_total counter"));
+    assert!(output.contains("# TYPE bus_exporter_uptime_seconds gauge"));
 }
 
 #[test]
@@ -107,9 +107,9 @@ fn test_to_metric_values() {
     let values = m.to_metric_values();
     let names: Vec<&str> = values.iter().map(|v| v.name.as_str()).collect();
 
-    assert!(names.contains(&"modbus_exporter_collectors_total"));
-    assert!(names.contains(&"modbus_exporter_uptime_seconds"));
-    assert!(names.contains(&"modbus_exporter_polls_total"));
-    assert!(names.contains(&"modbus_exporter_otlp_exports_total"));
-    assert!(names.contains(&"modbus_exporter_prometheus_scrapes_total"));
+    assert!(names.contains(&"bus_exporter_collectors_total"));
+    assert!(names.contains(&"bus_exporter_uptime_seconds"));
+    assert!(names.contains(&"bus_exporter_polls_total"));
+    assert!(names.contains(&"bus_exporter_otlp_exports_total"));
+    assert!(names.contains(&"bus_exporter_prometheus_scrapes_total"));
 }

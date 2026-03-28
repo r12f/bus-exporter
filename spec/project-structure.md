@@ -2,8 +2,8 @@
 
 ## Planned File Tree
 
-```
-modbus-exporter/
+```text
+bus-exporter/
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml
@@ -46,6 +46,12 @@ modbus-exporter/
 │   │   ├── tcp_tests.rs
 │   │   ├── rtu.rs               # RTU client impl
 │   │   └── rtu_tests.rs
+│   ├── i2c/
+│   │   ├── mod.rs              # I2C client impl
+│   │   └── mod_tests.rs
+│   ├── spi/
+│   │   ├── mod.rs              # SPI client impl
+│   │   └── mod_tests.rs
 │   ├── decoder.rs               # Byte order reordering, type conversion, scale/offset
 │   ├── decoder_tests.rs
 │   ├── logging.rs               # Tracing subscriber init, output layer setup
@@ -68,7 +74,7 @@ modbus-exporter/
 
 ## Module Dependency Graph
 
-```
+```text
 main
 ├── config
 ├── logging

@@ -11,6 +11,7 @@ Each collector maintains its own **local cache** (`CollectorCache`) — a `HashM
 After each complete poll cycle, the collector **atomically publishes** its cache snapshot to the shared `MetricStore` via `store.publish(collector_name, cache_snapshot)`. This is the **only write path** into the metric store. Exporters (OTLP, Prometheus) are pure readers — they never trigger Modbus calls.
 
 This strict **producer/consumer separation** ensures:
+
 - Modbus I/O is fully contained within collector tasks.
 - Exporters see a consistent snapshot, never partial poll results.
 - A slow or failing collector cannot block or delay metric export.
@@ -25,7 +26,7 @@ This strict **producer/consumer separation** ensures:
 
 ### Polling Loop
 
-```
+```rust
 loop {
     let start = Instant::now();
     let mut local_cache = HashMap::new();

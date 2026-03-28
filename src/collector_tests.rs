@@ -2,7 +2,7 @@ use super::*;
 use crate::config::{
     ByteOrder, Collector, DataType, Metric, MetricType as ConfigMetricType, Protocol, RegisterType,
 };
-use crate::modbus::{ModbusConnection, ModbusReader};
+use crate::modbus::{BusConnection, ModbusReader};
 use anyhow::Result;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ impl MockModbusClient {
 }
 
 #[async_trait]
-impl ModbusConnection for MockModbusClient {
+impl BusConnection for MockModbusClient {
     async fn connect(&mut self) -> Result<()> {
         let mut count = self.connect_fail_count.lock().unwrap();
         if *count > 0 {
@@ -106,10 +106,10 @@ impl ModbusReader for MockModbusClient {
 fn test_collector_config(name: &str) -> Collector {
     Collector {
         name: name.to_string(),
-        protocol: Protocol::Tcp {
+        protocol: Protocol::ModbusTcp {
             endpoint: "127.0.0.1:502".to_string(),
         },
-        slave_id: 1,
+        slave_id: Some(1),
         polling_interval: Duration::from_millis(100),
         labels: HashMap::new(),
         metrics_files: None,
@@ -117,13 +117,16 @@ fn test_collector_config(name: &str) -> Collector {
             name: "temperature".to_string(),
             description: "Temperature sensor".to_string(),
             metric_type: ConfigMetricType::Gauge,
-            register_type: RegisterType::Holding,
-            address: 100,
+            register_type: Some(RegisterType::Holding),
+            address: Some(100),
             data_type: DataType::U16,
             byte_order: ByteOrder::BigEndian,
             scale: 0.1,
             offset: 0.0,
             unit: "celsius".to_string(),
+            command: Vec::new(),
+            response_length: None,
+            response_offset: 0,
         }],
     }
 }
@@ -132,13 +135,15 @@ struct MockFactory {
     clients: Mutex<Vec<Box<dyn ModbusClient>>>,
 }
 
-impl ModbusClientFactory for MockFactory {
-    fn create(&self, _collector: &Collector) -> Box<dyn ModbusClient> {
-        self.clients
+impl BusClientFactory for MockFactory {
+    fn create(&self, _collector: &Collector) -> anyhow::Result<BusClient> {
+        let client = self
+            .clients
             .lock()
             .unwrap()
             .pop()
-            .expect("no mock clients left")
+            .expect("no mock clients left");
+        Ok(BusClient::Modbus(client))
     }
 }
 

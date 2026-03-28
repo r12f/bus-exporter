@@ -1,12 +1,15 @@
 #![allow(dead_code)]
+mod bus;
 mod collector;
 mod config;
 mod decoder;
 mod export;
+mod i2c;
 mod internal_metrics;
 mod logging;
 mod metrics;
 mod modbus;
+mod spi;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -16,8 +19,8 @@ use clap::Parser;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use collector::{CollectorEngine, ModbusClientFactory, DEFAULT_SHUTDOWN_TIMEOUT};
-use config::{Cli, Config, Protocol};
+use collector::{BusClient, BusClientFactory, CollectorEngine, DEFAULT_SHUTDOWN_TIMEOUT};
+use config::{find_config_file, Cli, Config, Protocol};
 use internal_metrics::InternalMetrics;
 use logging::{init_logging, LogOutput, LoggingConfig};
 use metrics::MetricStore;
@@ -25,21 +28,26 @@ use modbus::{rtu::RtuClient, tcp::TcpClient};
 
 // ── Real Modbus client factory ────────────────────────────────────────
 
-struct RealModbusClientFactory;
+struct RealBusClientFactory;
 
-impl ModbusClientFactory for RealModbusClientFactory {
-    fn create(&self, collector: &config::Collector) -> Box<dyn modbus::ModbusClient> {
+impl BusClientFactory for RealBusClientFactory {
+    fn create(&self, collector: &config::Collector) -> Result<BusClient> {
         match &collector.protocol {
-            Protocol::Tcp { endpoint } => {
-                Box::new(TcpClient::new(endpoint.clone(), collector.slave_id))
+            Protocol::ModbusTcp { endpoint } => {
+                let slave_id = collector.slave_id.unwrap_or(1);
+                Ok(BusClient::Modbus(Box::new(TcpClient::new(
+                    endpoint.clone(),
+                    slave_id,
+                ))))
             }
-            Protocol::Rtu {
+            Protocol::ModbusRtu {
                 device,
                 bps,
                 data_bits,
                 stop_bits,
                 parity,
             } => {
+                let slave_id = collector.slave_id.unwrap_or(1);
                 let builder = tokio_serial::new(device, *bps)
                     .data_bits(match data_bits {
                         5 => tokio_serial::DataBits::Five,
@@ -56,7 +64,52 @@ impl ModbusClientFactory for RealModbusClientFactory {
                         config::Parity::Even => tokio_serial::Parity::Even,
                         config::Parity::Odd => tokio_serial::Parity::Odd,
                     });
-                Box::new(RtuClient::new(builder, collector.slave_id))
+                Ok(BusClient::Modbus(Box::new(RtuClient::new(
+                    builder, slave_id,
+                ))))
+            }
+            Protocol::I2c { bus, address } => {
+                // Use real LinuxI2cDevice on Linux, StubI2cDevice otherwise
+                #[cfg(target_os = "linux")]
+                let device: Box<dyn i2c::I2cDevice> = {
+                    let mut dev = i2c::linux_device::LinuxI2cDevice::new(bus.clone(), *address);
+                    dev.open().context("failed to open I2C device")?;
+                    Box::new(dev)
+                };
+                #[cfg(not(target_os = "linux"))]
+                let device: Box<dyn i2c::I2cDevice> = Box::new(i2c::StubI2cDevice);
+
+                let client = i2c::I2cClient::new(device, bus.clone(), *address);
+                // Use shared per-bus lock via get_bus_lock
+                let bus_lock = i2c::get_bus_lock(bus);
+                Ok(BusClient::I2c { client, bus_lock })
+            }
+            Protocol::Spi {
+                device,
+                speed_hz,
+                mode,
+                bits_per_word,
+            } => {
+                #[cfg(target_os = "linux")]
+                let spi_device: Box<dyn spi::SpiDevice> = {
+                    let mut dev = spi::linux_device::LinuxSpiDevice::new(
+                        device.clone(),
+                        *speed_hz,
+                        *mode,
+                        *bits_per_word,
+                    );
+                    dev.open().context("failed to open SPI device")?;
+                    Box::new(dev)
+                };
+                #[cfg(not(target_os = "linux"))]
+                let spi_device: Box<dyn spi::SpiDevice> = Box::new(spi::StubSpiDevice);
+
+                let client = spi::SpiClient::new(spi_device, device.clone());
+                let device_lock = spi::get_device_lock(device);
+                Ok(BusClient::Spi {
+                    client,
+                    device_lock,
+                })
             }
         }
     }
@@ -116,8 +169,10 @@ async fn main() -> Result<()> {
     // 1. Parse CLI
     let cli = Cli::parse();
 
-    // 2. Load config
-    let config = Config::load(&cli.config).context("failed to load configuration")?;
+    // 2. Find and load config
+    let config_path =
+        find_config_file(cli.config.as_deref()).context("failed to find configuration file")?;
+    let config = Config::load(&config_path).context("failed to load configuration")?;
 
     // 3. Init logging
     let logging_cfg = map_logging_config(&config.logging);
@@ -138,7 +193,7 @@ async fn main() -> Result<()> {
     // 5. Spawn collector tasks
     let global_labels: BTreeMap<String, String> =
         config.global_labels.clone().into_iter().collect();
-    let factory = RealModbusClientFactory;
+    let factory = RealBusClientFactory;
     let engine = CollectorEngine::spawn(
         config.collectors.clone(),
         store.clone(),

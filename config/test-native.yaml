@@ -1,5 +1,6 @@
-# bus-exporter test configuration
-# Used by E2E tests with oitc/modbus-server simulator
+# bus-exporter test configuration for native (non-Docker) e2e tests.
+# The simulator runs on localhost:{{PORT}} — the test rewrites this file
+# with the actual port before starting bus-exporter.
 
 global_labels:
   env: test
@@ -15,16 +16,16 @@ exporters:
     endpoint: "http://localhost:4318"
   prometheus:
     enabled: true
-    listen: "0.0.0.0:9090"
+    listen: "0.0.0.0:0"
     path: "/metrics"
 
 collectors:
   - name: test_device
     protocol:
       type: modbus-tcp
-      endpoint: "modbus-simulator:5020"
+      endpoint: "localhost:5020"
     slave_id: 1
-    polling_interval: "2s"
+    polling_interval: "1s"
     labels:
       device: simulator
     metrics:

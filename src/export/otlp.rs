@@ -85,7 +85,7 @@ pub fn build_request(
 
     // Scope
     let mut scope = Vec::new();
-    encode_ld(1, b"modbus-exporter", &mut scope); // name
+    encode_ld(1, b"bus-exporter", &mut scope); // name
 
     // Build Metric entries
     let mut otlp_metrics_buf = Vec::new();
@@ -169,7 +169,7 @@ pub fn build_request_with_internal(
 
     // Device scope
     let mut device_scope = Vec::new();
-    encode_ld(1, b"modbus-exporter", &mut device_scope);
+    encode_ld(1, b"bus-exporter", &mut device_scope);
 
     let mut device_scope_metrics = Vec::new();
     encode_ld(1, &device_scope, &mut device_scope_metrics);
@@ -180,7 +180,7 @@ pub fn build_request_with_internal(
 
     // Internal scope
     let mut internal_scope = Vec::new();
-    encode_ld(1, b"modbus-exporter-internal", &mut internal_scope);
+    encode_ld(1, b"bus-exporter-internal", &mut internal_scope);
 
     let mut internal_scope_metrics = Vec::new();
     encode_ld(1, &internal_scope, &mut internal_scope_metrics);

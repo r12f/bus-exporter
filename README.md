@@ -1,23 +1,23 @@
-# modbus-exporter
+# bus-exporter
 
-An OpenTelemetry-native Modbus exporter that polls Modbus RTU and TCP devices and exports metrics via OTLP (protobuf/HTTP) and Prometheus scrape endpoint.
+A hardware bus metrics exporter that polls Modbus RTU/TCP, I2C, and SPI devices and exports metrics via OTLP (protobuf/HTTP), Prometheus scrape endpoint, and MQTT.
 
 ## Installation
 
 ### Cargo
 
 ```bash
-cargo install modbus-exporter
+cargo install bus-exporter
 ```
 
 ### Docker
 
 ```bash
 docker run -d \
-  -v /path/to/config.yaml:/etc/modbus-exporter/config.yaml:ro \
+  -v /path/to/config.yaml:/etc/bus-exporter/config.yaml:ro \
   -p 9090:9090 \
   --device /dev/ttyUSB0:/dev/ttyUSB0 \
-  r12f/modbus-exporter:latest
+  r12f/bus-exporter:latest
 ```
 
 For TCP-only collectors, the `--device` flag is not needed.
@@ -27,6 +27,8 @@ Multi-arch images available: `linux/amd64` and `linux/arm64`. See the [Docker sp
 ## Features
 
 - **[Modbus RTU & TCP](spec/modbus.md)** — poll devices over serial (RS-485/RS-232) or Ethernet
+- **[I2C](spec/i2c.md)** — read sensors and peripherals on I2C buses (Linux)
+- **[SPI](spec/spi.md)** — read ADCs and peripherals via SPI (Linux)
 - **[Flexible decoding](spec/decoder.md)** — u16, i16, u32, i32, f32, u64, i64, f64, bool with configurable byte order and scale/offset transform
 - **[OTLP export](spec/export-otlp.md)** — push metrics to any OpenTelemetry Collector via protobuf/HTTP
 - **[Prometheus export](spec/export-prometheus.md)** — built-in `/metrics` HTTP endpoint for pull-based scraping
@@ -57,7 +59,7 @@ exporters:
 collectors:
   - name: "power-meter"
     protocol:
-      type: tcp
+      type: modbus-tcp
       endpoint: "192.168.1.100:502"
     slave_id: 1
     polling_interval: "5s"

@@ -4,7 +4,7 @@ use tokio_modbus::client::{tcp, Context as ModbusContext, Reader};
 use tokio_modbus::Slave;
 
 use super::{
-    validate_coil_count, validate_register_count, ModbusConnection, ModbusReader, READ_TIMEOUT,
+    validate_coil_count, validate_register_count, BusConnection, ModbusReader, READ_TIMEOUT,
 };
 
 /// Modbus TCP client.
@@ -36,7 +36,7 @@ impl TcpClient {
 }
 
 #[async_trait]
-impl ModbusConnection for TcpClient {
+impl BusConnection for TcpClient {
     async fn connect(&mut self) -> Result<()> {
         if self.context.is_some() {
             self.disconnect().await.ok();

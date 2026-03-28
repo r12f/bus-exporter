@@ -58,8 +58,8 @@ on:
     push: true
     platforms: linux/amd64,linux/arm64
     tags: |
-      r12f/modbus-exporter:vX.Y.Z
-      r12f/modbus-exporter:latest
+      r12f/bus-exporter:vX.Y.Z
+      r12f/bus-exporter:latest
 ```
 
 #### 4. GitHub Release
@@ -79,6 +79,7 @@ This auto-generates release notes from merged PRs since the last tag.
 ### Job Order
 
 All steps run in a single job (sequential):
+
 1. Checkout → version bump → commit + tag + push
 2. `cargo publish` (crates.io)
 3. Docker build + push (multi-arch)

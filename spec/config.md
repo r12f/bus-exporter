@@ -2,7 +2,25 @@
 
 ## Overview
 
-Configuration is loaded from a YAML file specified via `--config` CLI flag. Default: `config.yaml` in the working directory.
+Configuration is loaded from a YAML file. The file location is determined as follows:
+
+### Config File Resolution
+
+If `--config <path>` is specified, use that path exactly (error if not found).
+
+If `--config` is **not** specified, search in order (first match wins):
+
+1. `./config.yaml` (current working directory — highest priority)
+2. `~/.config/bus-exporter/config.yaml` (user config)
+3. `/etc/bus-exporter/config.yaml` (system config)
+
+If none found, exit with an error listing all searched paths.
+
+### Path Resolution
+
+All relative paths within the config file (e.g., `metrics_files` entries) are resolved relative to the **parent directory of the config file that was loaded**, not the current working directory.
+
+Example: config loaded from `~/.config/bus-exporter/config.yaml` with `metrics_files: ["devices/sdm630.yaml"]` → resolves to `~/.config/bus-exporter/devices/sdm630.yaml`.
 
 ## Example
 
@@ -77,7 +95,7 @@ See [export-mqtt.md](export-mqtt.md) for full MQTT export specification.
 |-------|------|----------|---------|-------------|
 | `name` | `string` | Yes | — | Unique collector name (used as label) |
 | `protocol` | `Protocol` | Yes | — | Connection protocol |
-| `slave_id` | `u8` | Yes | — | Modbus slave/unit ID (1-247) |
+| `slave_id` | `u8` | Modbus only | — | Modbus slave/unit ID (1-247). Not used for I2C/SPI. |
 | `polling_interval` | `string` | No | `"10s"` | Poll interval (duration string) |
 | `labels` | `map<string, string>` | No | `{}` | Labels for all metrics in this collector |
 | `metrics_files` | `list<string>` | No | `[]` | Paths to metrics definition files (see [Metrics Files](#metrics-files)) |
@@ -87,38 +105,90 @@ A collector must have at least one metric after merging `metrics_files` and `met
 
 ### Protocol
 
-#### TCP
+#### Modbus TCP
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `type` | `string` | Yes | — | Must be `"tcp"` |
+| `type` | `string` | Yes | — | Must be `"modbus-tcp"` |
 | `endpoint` | `string` | Yes | — | `host:port` |
 
-#### RTU
+#### Modbus RTU
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `type` | `string` | Yes | — | Must be `"rtu"` |
+| `type` | `string` | Yes | — | Must be `"modbus-rtu"` |
 | `device` | `string` | Yes | — | Serial device path (e.g., `/dev/ttyUSB0`) |
 | `bps` | `u32` | No | `9600` | Baud rate |
 | `data_bits` | `u8` | No | `8` | Data bits (5-8) |
 | `stop_bits` | `u8` | No | `1` | Stop bits (1-2) |
 | `parity` | `string` | No | `"none"` | `"none"`, `"even"`, or `"odd"` |
 
+#### I2C
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `type` | `string` | Yes | — | Must be `"i2c"` |
+| `bus` | `string` | Yes | — | I2C bus device path (e.g., `/dev/i2c-1`) |
+| `address` | `u8` | Yes | — | 7-bit device address (`0x03`–`0x77`) |
+
+See [i2c.md](i2c.md) for full I2C specification.
+
+#### SPI
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `type` | `string` | Yes | — | Must be `"spi"` |
+| `device` | `string` | Yes | — | SPI device path (e.g., `/dev/spidev0.0`) |
+| `speed_hz` | `u32` | No | `1000000` | SPI clock speed in Hz |
+| `mode` | `u8` | No | `0` | SPI mode: `0`, `1`, `2`, or `3` |
+| `bits_per_word` | `u8` | No | `8` | Bits per word |
+
+See [spi.md](spi.md) for full SPI specification.
+
 ### Metric
+
+The metric schema varies slightly by protocol. Modbus uses `address` + `register_type`.
+I2C uses `address` only (no register types). SPI uses `command` + `response_length` + `response_offset`. Common fields apply to all.
+
+#### Common Fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | `string` | Yes | — | Metric name (snake_case recommended) |
 | `description` | `string` | No | `""` | Human-readable description |
 | `type` | `string` | Yes | — | `"counter"` or `"gauge"` |
-| `register_type` | `string` | Yes | — | `"holding"`, `"input"`, `"coil"`, or `"discrete"` |
-| `address` | `u16` | Yes | — | Starting register address (0-based) |
-| `data_type` | `string` | Yes | — | One of: `u16`, `i16`, `u32`, `i32`, `f32`, `u64`, `i64`, `f64`, `bool` |
+| `data_type` | `string` | Yes | — | One of: `u8`, `u16`, `i16`, `u32`, `i32`, `f32`, `u64`, `i64`, `f64`, `bool` |
 | `byte_order` | `string` | No | `"big_endian"` | `"big_endian"`, `"little_endian"`, `"mid_big_endian"`, `"mid_little_endian"` |
 | `scale` | `f64` | No | `1.0` | Multiplicative scale factor |
 | `offset` | `f64` | No | `0.0` | Additive offset |
 | `unit` | `string` | No | `""` | Unit label (e.g., `"V"`, `"kWh"`, `"°C"`) |
+
+#### Modbus-specific Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `register_type` | `string` | Yes | — | `"holding"`, `"input"`, `"coil"`, or `"discrete"` |
+| `address` | `u16` | Yes | — | Starting register address (0-based) |
+
+Note: `u8` data type is **not** available for Modbus (16-bit register based). `data_type: bool` requires `coil` or `discrete` register type.
+
+#### I2C-specific Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `address` | `u16` | Yes | — | I2C register address (0x00–0xFF) |
+
+Note: `register_type` is not used for I2C. `u8` data type is available.
+
+#### SPI-specific Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `command` | `list<u8>` | Yes | — | Bytes to transmit (TX buffer) |
+| `response_length` | `u16` | No | auto | Total response bytes (defaults to `command` length — SPI is full-duplex) |
+| `response_offset` | `u16` | No | `0` | Skip first N bytes of response before decoding |
+
+Note: `register_type` and `address` are not used for SPI. `u8` data type is available.
 
 ### Metrics Files
 
@@ -127,7 +197,7 @@ Metrics files allow reusable metric definitions across multiple collectors with 
 #### File Path Resolution
 
 Relative paths are resolved against the **config file's parent directory**.
-Example: config at `/etc/modbus-exporter/config.yaml` + `metrics_files: ["devices/sdm630.yaml"]` → `/etc/modbus-exporter/devices/sdm630.yaml`.
+Example: config at `/etc/bus-exporter/config.yaml` + `metrics_files: ["devices/sdm630.yaml"]` → `/etc/bus-exporter/devices/sdm630.yaml`.
 Absolute paths are used as-is.
 
 #### File Format
@@ -197,7 +267,7 @@ metrics:
 # config.yaml
 collectors:
   - name: meter1
-    protocol: { type: tcp, endpoint: "192.168.1.10:502" }
+    protocol: { type: modbus-tcp, endpoint: "192.168.1.10:502" }
     slave_id: 1
     metrics_files:
       - "devices/base.yaml"       # loaded first
@@ -243,13 +313,14 @@ logging:
 11. All `metrics_files` paths must exist and be readable.
 12. Each metrics file must contain a valid `metrics` list with at least one entry.
 13. After merge, all required fields (`name`, `type`, `register_type`, `address`, `data_type`) must be present on every metric. Missing required fields from partial overrides are a validation error.
-14. `polling_interval` must be ≥ 100ms.
+14. `polling_interval` must be ≥ 1ms.
 15. `scale` must not be zero.
 16. `counter` metric type is not compatible with `coil`/`discrete` register types or `bool` data type (counters must be numeric).
+17. `data_type: u8` is only valid for I2C and SPI collectors (Modbus registers are 16-bit minimum).
 
 ## Scale Formula
 
-```
+```text
 output_value = raw_value * scale + offset
 ```
 

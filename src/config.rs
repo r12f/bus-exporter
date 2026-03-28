@@ -9,11 +9,46 @@ use std::time::Duration;
 use tracing::info;
 
 #[derive(Parser, Debug)]
-#[command(name = "modbus-exporter")]
+#[command(name = "bus-exporter")]
 pub struct Cli {
     /// Path to the configuration file
-    #[arg(short, long, default_value = "config.yaml")]
-    pub config: PathBuf,
+    #[arg(short, long)]
+    pub config: Option<PathBuf>,
+}
+
+/// Default search paths for the config file (in priority order).
+pub const CONFIG_SEARCH_PATHS: &[&str] = &[
+    "./config.yaml",
+    "~/.config/bus-exporter/config.yaml",
+    "/etc/bus-exporter/config.yaml",
+];
+
+/// Find the config file using the fallback search order.
+/// If `explicit` is Some, use that exact path (error if missing).
+/// Otherwise search the default locations.
+pub fn find_config_file(explicit: Option<&Path>) -> Result<PathBuf> {
+    if let Some(p) = explicit {
+        if p.exists() {
+            return Ok(p.to_path_buf());
+        }
+        bail!("specified config file not found: {}", p.display());
+    }
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    for pattern in CONFIG_SEARCH_PATHS {
+        let expanded = pattern.replace('~', &home);
+        let path = PathBuf::from(&expanded);
+        if path.exists() {
+            info!(path = %path.display(), "found config file");
+            return Ok(path);
+        }
+    }
+
+    let searched: Vec<String> = CONFIG_SEARCH_PATHS
+        .iter()
+        .map(|p| p.replace('~', &home))
+        .collect();
+    bail!("no config file found; searched:\n{}", searched.join("\n"));
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -201,7 +236,8 @@ fn default_mqtt_timeout() -> Duration {
 pub struct Collector {
     pub name: String,
     pub protocol: Protocol,
-    pub slave_id: u8,
+    #[serde(default)]
+    pub slave_id: Option<u8>,
     #[serde(default = "default_polling_interval", with = "humantime_serde")]
     pub polling_interval: Duration,
     #[serde(default)]
@@ -217,12 +253,12 @@ fn default_polling_interval() -> Duration {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(tag = "type")]
 pub enum Protocol {
-    Tcp {
-        endpoint: String,
-    },
-    Rtu {
+    #[serde(rename = "modbus-tcp")]
+    ModbusTcp { endpoint: String },
+    #[serde(rename = "modbus-rtu")]
+    ModbusRtu {
         device: String,
         #[serde(default = "default_bps")]
         bps: u32,
@@ -233,6 +269,28 @@ pub enum Protocol {
         #[serde(default)]
         parity: Parity,
     },
+    #[serde(rename = "i2c")]
+    I2c { bus: String, address: u8 },
+    #[serde(rename = "spi")]
+    Spi {
+        device: String,
+        #[serde(default = "default_spi_speed_hz")]
+        speed_hz: u32,
+        #[serde(default = "default_spi_mode")]
+        mode: u8,
+        #[serde(default = "default_spi_bits_per_word")]
+        bits_per_word: u8,
+    },
+}
+
+fn default_spi_speed_hz() -> u32 {
+    1_000_000
+}
+fn default_spi_mode() -> u8 {
+    0
+}
+fn default_spi_bits_per_word() -> u8 {
+    8
 }
 
 fn default_bps() -> u32 {
@@ -262,8 +320,8 @@ pub struct Metric {
     pub description: String,
     #[serde(rename = "type")]
     pub metric_type: MetricType,
-    pub register_type: RegisterType,
-    pub address: u16,
+    pub register_type: Option<RegisterType>,
+    pub address: Option<u16>,
     pub data_type: DataType,
     #[serde(default = "default_byte_order")]
     pub byte_order: ByteOrder,
@@ -273,6 +331,15 @@ pub struct Metric {
     pub offset: f64,
     #[serde(default)]
     pub unit: String,
+    /// SPI-only: command bytes to transmit (TX buffer).
+    #[serde(default)]
+    pub command: Vec<u8>,
+    /// SPI-only: total response bytes. Defaults to command length (full-duplex).
+    #[serde(default)]
+    pub response_length: Option<u16>,
+    /// SPI-only: skip first N bytes of response before decoding.
+    #[serde(default)]
+    pub response_offset: u16,
 }
 
 fn default_byte_order() -> ByteOrder {
@@ -301,6 +368,7 @@ pub enum RegisterType {
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum DataType {
+    U8,
     U16,
     I16,
     U32,
@@ -316,9 +384,19 @@ impl DataType {
     /// Returns the number of 16-bit Modbus registers this data type occupies.
     pub fn register_count(self) -> u16 {
         match self {
-            DataType::U16 | DataType::I16 | DataType::Bool => 1,
+            DataType::U8 | DataType::U16 | DataType::I16 | DataType::Bool => 1,
             DataType::U32 | DataType::I32 | DataType::F32 => 2,
             DataType::U64 | DataType::I64 | DataType::F64 => 4,
+        }
+    }
+
+    /// Returns the number of raw bytes this data type occupies.
+    pub fn byte_size(self) -> usize {
+        match self {
+            DataType::Bool | DataType::U8 => 1,
+            DataType::U16 | DataType::I16 => 2,
+            DataType::U32 | DataType::I32 | DataType::F32 => 4,
+            DataType::U64 | DataType::I64 | DataType::F64 => 8,
         }
     }
 }
@@ -374,6 +452,12 @@ pub struct RawMetric {
     pub scale: Option<f64>,
     pub offset: Option<f64>,
     pub unit: Option<String>,
+    #[serde(default)]
+    pub command: Vec<u8>,
+    #[serde(default)]
+    pub response_length: Option<u16>,
+    #[serde(default)]
+    pub response_offset: u16,
 }
 
 impl RawMetric {
@@ -398,20 +482,9 @@ impl RawMetric {
 
         let register_type = self
             .register_type
-            .or_else(|| d.and_then(|d| d.register_type))
-            .with_context(|| {
-                format!(
-                    "collector '{}': metric '{}' in '{}': missing required field 'register_type'",
-                    collector_name, self.name, file_path
-                )
-            })?;
+            .or_else(|| d.and_then(|d| d.register_type));
 
-        let address = self.address.with_context(|| {
-            format!(
-                "collector '{}': metric '{}' in '{}': missing required field 'address'",
-                collector_name, self.name, file_path
-            )
-        })?;
+        let address = self.address;
 
         let data_type = self
             .data_type
@@ -449,6 +522,9 @@ impl RawMetric {
                 .unit
                 .or_else(|| d.and_then(|d| d.unit.clone()))
                 .unwrap_or_default(),
+            command: self.command,
+            response_length: self.response_length,
+            response_offset: self.response_offset,
         })
     }
 }
@@ -588,78 +664,234 @@ impl Config {
             if !cnames.insert(&c.name) {
                 bail!("duplicate collector name: {}", c.name);
             }
-            if c.slave_id == 0 || c.slave_id > 247 {
-                bail!(
-                    "collector '{}': slave_id must be 1-247, got {}",
-                    c.name,
-                    c.slave_id
-                );
+            // Protocol-specific validation
+            match &c.protocol {
+                Protocol::ModbusTcp { endpoint } => {
+                    // slave_id required for Modbus
+                    match c.slave_id {
+                        Some(id) if id == 0 || id > 247 => {
+                            bail!("collector '{}': slave_id must be 1-247, got {}", c.name, id);
+                        }
+                        None => {
+                            bail!(
+                                "collector '{}': slave_id is required for Modbus protocols",
+                                c.name
+                            );
+                        }
+                        _ => {}
+                    }
+                    let valid = endpoint
+                        .rsplit_once(':')
+                        .is_some_and(|(_, port)| port.parse::<u16>().is_ok());
+                    if !valid {
+                        bail!(
+                            "collector '{}': invalid TCP endpoint '{}' (expected host:port, e.g. 127.0.0.1:502)",
+                            c.name,
+                            endpoint
+                        );
+                    }
+                }
+                Protocol::ModbusRtu {
+                    data_bits,
+                    stop_bits,
+                    ..
+                } => {
+                    // slave_id required for Modbus
+                    match c.slave_id {
+                        Some(id) if id == 0 || id > 247 => {
+                            bail!("collector '{}': slave_id must be 1-247, got {}", c.name, id);
+                        }
+                        None => {
+                            bail!(
+                                "collector '{}': slave_id is required for Modbus protocols",
+                                c.name
+                            );
+                        }
+                        _ => {}
+                    }
+                    if !(5..=8).contains(data_bits) {
+                        bail!(
+                            "collector '{}': data_bits must be 5-8, got {}",
+                            c.name,
+                            data_bits
+                        );
+                    }
+                    if !(1..=2).contains(stop_bits) {
+                        bail!(
+                            "collector '{}': stop_bits must be 1-2, got {}",
+                            c.name,
+                            stop_bits
+                        );
+                    }
+                }
+                Protocol::I2c { bus, address } => {
+                    if bus.is_empty() {
+                        bail!("collector '{}': I2C bus path must not be empty", c.name);
+                    }
+                    if *address < 0x03 || *address > 0x77 {
+                        bail!(
+                            "collector '{}': I2C address must be 0x03-0x77, got {:#04x}",
+                            c.name,
+                            address
+                        );
+                    }
+                }
+                Protocol::Spi {
+                    device,
+                    speed_hz,
+                    mode,
+                    bits_per_word,
+                } => {
+                    if device.is_empty() {
+                        bail!("collector '{}': SPI device path must not be empty", c.name);
+                    }
+                    if *speed_hz == 0 {
+                        bail!("collector '{}': SPI speed_hz must be > 0", c.name);
+                    }
+                    if *mode > 3 {
+                        bail!("collector '{}': SPI mode must be 0-3, got {}", c.name, mode);
+                    }
+                    if *bits_per_word == 0 || *bits_per_word > 32 {
+                        bail!(
+                            "collector '{}': SPI bits_per_word must be 1-32, got {}",
+                            c.name,
+                            bits_per_word
+                        );
+                    }
+                }
             }
-            // Validate polling_interval minimum (100ms)
-            if c.polling_interval.as_millis() < 100 {
+            // Validate polling_interval minimum (1ms)
+            if c.polling_interval.as_millis() < 1 {
                 bail!(
-                    "collector '{}': polling_interval must be at least 100ms, got {:?}",
+                    "collector '{}': polling_interval must be at least 1ms, got {:?}",
                     c.name,
                     c.polling_interval
                 );
             }
-            // Validate TCP endpoint format (must be parseable as host:port)
-            if let Protocol::Tcp { endpoint } = &c.protocol {
-                // Must contain at least one colon separating host from port,
-                // and the port part must be a valid u16.
-                let valid = endpoint
-                    .rsplit_once(':')
-                    .is_some_and(|(_, port)| port.parse::<u16>().is_ok());
-                if !valid {
-                    bail!(
-                        "collector '{}': invalid TCP endpoint '{}' (expected host:port, e.g. 127.0.0.1:502)",
-                        c.name,
-                        endpoint
-                    );
-                }
-            }
-            // Validate RTU data_bits and stop_bits ranges
-            if let Protocol::Rtu {
-                data_bits,
-                stop_bits,
-                ..
-            } = &c.protocol
-            {
-                if !(5..=8).contains(data_bits) {
-                    bail!(
-                        "collector '{}': data_bits must be 5-8, got {}",
-                        c.name,
-                        data_bits
-                    );
-                }
-                if !(1..=2).contains(stop_bits) {
-                    bail!(
-                        "collector '{}': stop_bits must be 1-2, got {}",
-                        c.name,
-                        stop_bits
-                    );
-                }
-            }
             if c.metrics.is_empty() {
                 bail!("collector '{}': at least one metric required", c.name);
             }
+            let is_i2c = matches!(c.protocol, Protocol::I2c { .. });
+            let is_spi = matches!(c.protocol, Protocol::Spi { .. });
+            let is_modbus = !is_i2c && !is_spi;
             for m in &c.metrics {
-                if (m.register_type == RegisterType::Coil
-                    || m.register_type == RegisterType::Discrete)
-                    && m.data_type != DataType::Bool
-                {
+                // Address is required for Modbus and I2C protocols
+                if !is_spi && m.address.is_none() {
                     bail!(
-                        "collector '{}', metric '{}': coil/discrete register must use data_type bool",
+                        "collector '{}', metric '{}': address is required for {} protocol",
                         c.name,
-                        m.name
+                        m.name,
+                        if is_i2c { "I2C" } else { "Modbus" }
                     );
                 }
-                if m.data_type == DataType::Bool
-                    && m.register_type != RegisterType::Coil
-                    && m.register_type != RegisterType::Discrete
-                {
+                // Modbus-specific validations
+                if is_modbus {
+                    let register_type = m.register_type.unwrap_or(RegisterType::Holding);
+                    if (register_type == RegisterType::Coil
+                        || register_type == RegisterType::Discrete)
+                        && m.data_type != DataType::Bool
+                    {
+                        bail!(
+                            "collector '{}', metric '{}': coil/discrete register must use data_type bool",
+                            c.name,
+                            m.name
+                        );
+                    }
+                    if m.data_type == DataType::Bool
+                        && register_type != RegisterType::Coil
+                        && register_type != RegisterType::Discrete
+                    {
+                        bail!(
+                            "collector '{}', metric '{}': bool data_type must use coil or discrete register",
+                            c.name,
+                            m.name
+                        );
+                    }
+                    if m.metric_type == MetricType::Counter
+                        && (register_type == RegisterType::Coil
+                            || register_type == RegisterType::Discrete)
+                    {
+                        bail!(
+                            "collector '{}', metric '{}': coil/discrete registers only support gauge metric type",
+                            c.name,
+                            m.name
+                        );
+                    }
+                    if m.register_type.is_none() {
+                        bail!(
+                            "collector '{}', metric '{}': register_type is required for Modbus protocols",
+                            c.name,
+                            m.name
+                        );
+                    }
+                    // u8 data type is not valid for Modbus (registers are 16-bit)
+                    if m.data_type == DataType::U8 {
+                        bail!(
+                            "collector '{}', metric '{}': data_type u8 is not supported for Modbus protocols (minimum register size is 16-bit)",
+                            c.name,
+                            m.name
+                        );
+                    }
+                }
+                // I2C-specific validations
+                if is_i2c {
+                    // Validate metric address fits in u8 (I2C register addresses are 8-bit)
+                    if m.address.unwrap() > 0xFF {
+                        bail!(
+                            "collector '{}', metric '{}': I2C register address {:#06x} exceeds u8 range (max 0xFF)",
+                            c.name,
+                            m.name,
+                            m.address.unwrap()
+                        );
+                    }
+                    // Mid-endian byte orders are Modbus-specific (word-swapped)
+                    if matches!(
+                        m.byte_order,
+                        ByteOrder::MidBigEndian | ByteOrder::MidLittleEndian
+                    ) {
+                        bail!(
+                            "collector '{}', metric '{}': mid-endian byte order is not supported for I2C (Modbus-specific)",
+                            c.name,
+                            m.name
+                        );
+                    }
+                }
+                // SPI-specific validations
+                if is_spi {
+                    if m.command.is_empty() {
+                        bail!(
+                            "collector '{}', metric '{}': command is required for SPI metrics",
+                            c.name,
+                            m.name
+                        );
+                    }
+                    // Mid-endian byte orders are Modbus-specific
+                    if matches!(
+                        m.byte_order,
+                        ByteOrder::MidBigEndian | ByteOrder::MidLittleEndian
+                    ) {
+                        bail!(
+                            "collector '{}', metric '{}': mid-endian byte order is not supported for SPI (Modbus-specific)",
+                            c.name,
+                            m.name
+                        );
+                    }
+                    let resp_len = m.response_length.unwrap_or(m.command.len() as u16);
+                    let data_bytes = m.data_type.byte_size() as u16;
+                    if m.response_offset + data_bytes > resp_len {
+                        bail!(
+                            "collector '{}', metric '{}': response_offset ({}) + data_type bytes ({}) exceeds response_length ({})",
+                            c.name,
+                            m.name,
+                            m.response_offset,
+                            data_bytes,
+                            resp_len
+                        );
+                    }
+                }
+                if m.metric_type == MetricType::Counter && m.data_type == DataType::Bool {
                     bail!(
-                        "collector '{}', metric '{}': bool data_type must use coil or discrete register",
+                        "collector '{}', metric '{}': counter metric type cannot be used with bool data_type",
                         c.name,
                         m.name
                     );
@@ -672,39 +904,25 @@ impl Config {
                         m.name
                     );
                 }
-                // Validate counter not used on coil/discrete (must be gauge only)
-                if m.metric_type == MetricType::Counter
-                    && (m.register_type == RegisterType::Coil
-                        || m.register_type == RegisterType::Discrete)
-                {
-                    bail!(
-                        "collector '{}', metric '{}': coil/discrete registers only support gauge metric type",
-                        c.name,
-                        m.name
-                    );
-                }
-                // Validate counter + bool is nonsensical
-                if m.metric_type == MetricType::Counter && m.data_type == DataType::Bool {
-                    bail!(
-                        "collector '{}', metric '{}': counter metric type cannot be used with bool data_type",
-                        c.name,
-                        m.name
-                    );
-                }
-                // Validate multi-register address overflow
-                let reg_count = m.data_type.register_count();
-                if m.address as u32 + reg_count as u32 > 65536 {
-                    bail!(
-                        "collector '{}', metric '{}': address {} + {} registers exceeds 65535",
-                        c.name,
-                        m.name,
-                        m.address,
-                        reg_count
-                    );
+                // Validate multi-register address overflow (Modbus only)
+                if is_modbus {
+                    let reg_count = m.data_type.register_count();
+                    if m.address.unwrap() as u32 + reg_count as u32 > 65536 {
+                        bail!(
+                            "collector '{}', metric '{}': address {} + {} registers exceeds 65535",
+                            c.name,
+                            m.name,
+                            m.address.unwrap(),
+                            reg_count
+                        );
+                    }
                 }
                 // Warn if byte_order is set to non-default for single-register types
                 // (byte_order is meaningless for u16/i16/bool which occupy only 1 register)
-                if m.data_type.register_count() == 1 && m.byte_order != ByteOrder::BigEndian {
+                if is_modbus
+                    && m.data_type.register_count() == 1
+                    && m.byte_order != ByteOrder::BigEndian
+                {
                     eprintln!(
                         "warning: collector '{}', metric '{}': byte_order has no effect for single-register type {:?}",
                         c.name, m.name, m.data_type

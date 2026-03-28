@@ -8,6 +8,7 @@ mod internal_metrics;
 mod logging;
 mod metrics;
 mod modbus;
+mod spi;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -76,6 +77,33 @@ impl BusClientFactory for RealBusClientFactory {
                 // Use shared per-bus lock via get_bus_lock
                 let bus_lock = i2c::get_bus_lock(bus);
                 BusClient::I2c { client, bus_lock }
+            }
+            Protocol::Spi {
+                device,
+                speed_hz,
+                mode,
+                bits_per_word,
+            } => {
+                #[cfg(target_os = "linux")]
+                let spi_device: Box<dyn spi::SpiDevice> = {
+                    let mut dev = spi::linux_device::LinuxSpiDevice::new(
+                        device.clone(),
+                        *speed_hz,
+                        *mode,
+                        *bits_per_word,
+                    );
+                    dev.open().expect("failed to open SPI device");
+                    Box::new(dev)
+                };
+                #[cfg(not(target_os = "linux"))]
+                let spi_device: Box<dyn spi::SpiDevice> = Box::new(spi::StubSpiDevice);
+
+                let client = spi::SpiClient::new(spi_device, device.clone());
+                let device_lock = spi::get_device_lock(device);
+                BusClient::Spi {
+                    client,
+                    device_lock,
+                }
             }
         }
     }

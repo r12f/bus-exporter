@@ -46,6 +46,9 @@ fn make_metric(name: &str, address: u16, data_type: DataType) -> Metric {
         scale: 1.0,
         offset: 0.0,
         unit: String::new(),
+        command: Vec::new(),
+        response_length: None,
+        response_offset: 0,
     }
 }
 

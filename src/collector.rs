@@ -13,6 +13,7 @@ use crate::i2c::{self, I2cClient};
 use crate::internal_metrics::InternalMetrics;
 use crate::metrics::{MetricStore, MetricType, MetricValue};
 use crate::modbus::ModbusClient;
+use crate::spi::{self, SpiClient};
 
 /// Maximum backoff duration for reconnection attempts.
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
@@ -60,6 +61,10 @@ pub enum BusClient {
         client: I2cClient,
         bus_lock: i2c::BusLock,
     },
+    Spi {
+        client: SpiClient,
+        device_lock: spi::DeviceLock,
+    },
 }
 
 impl BusClient {
@@ -67,6 +72,10 @@ impl BusClient {
         match self {
             BusClient::Modbus(c) => c.connect().await,
             BusClient::I2c { client, .. } => {
+                use crate::modbus::ModbusConnection;
+                client.connect().await
+            }
+            BusClient::Spi { client, .. } => {
                 use crate::modbus::ModbusConnection;
                 client.connect().await
             }
@@ -80,6 +89,10 @@ impl BusClient {
                 use crate::modbus::ModbusConnection;
                 client.disconnect().await
             }
+            BusClient::Spi { client, .. } => {
+                use crate::modbus::ModbusConnection;
+                client.disconnect().await
+            }
         }
     }
 
@@ -87,6 +100,10 @@ impl BusClient {
         match self {
             BusClient::Modbus(c) => c.is_connected(),
             BusClient::I2c { client, .. } => {
+                use crate::modbus::ModbusConnection;
+                client.is_connected()
+            }
+            BusClient::Spi { client, .. } => {
                 use crate::modbus::ModbusConnection;
                 client.is_connected()
             }
@@ -151,6 +168,10 @@ async fn read_bus_metric(client: &mut BusClient, metric: &config::Metric) -> Res
         BusClient::I2c { client, bus_lock } => {
             i2c::read_i2c_metric(client, metric, bus_lock).await
         }
+        BusClient::Spi {
+            client,
+            device_lock,
+        } => spi::read_spi_metric(client, metric, device_lock).await,
     }
 }
 

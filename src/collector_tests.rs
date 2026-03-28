@@ -124,6 +124,9 @@ fn test_collector_config(name: &str) -> Collector {
             scale: 0.1,
             offset: 0.0,
             unit: "celsius".to_string(),
+            command: Vec::new(),
+            response_length: None,
+            response_offset: 0,
         }],
     }
 }

@@ -17,14 +17,13 @@ use clap::Parser;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use collector::{BusClient, BusClientFactory, CollectorEngine, DEFAULT_SHUTDOWN_TIMEOUT};
+use collector::{CollectorEngine, MetricReaderFactory, DEFAULT_SHUTDOWN_TIMEOUT};
 use config::{find_config_file, Cli, Config, Protocol};
 use internal_metrics::InternalMetrics;
 use logging::{init_logging, LogOutput, LoggingConfig};
 use metrics::MetricStore;
-use reader::modbus::{rtu::RtuClient, tcp::TcpClient};
 
-// ── Real Modbus client factory ────────────────────────────────────────
+// ── Real MetricReader factory ─────────────────────────────────────────
 
 struct RealBusClientFactory;
 

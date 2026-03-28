@@ -87,7 +87,7 @@ pub fn build_request(
     let mut scope = Vec::new();
     encode_ld(1, b"bus-exporter", &mut scope); // name
 
-    // Build MetricConfig entries
+    // Build Metric entries
     let mut otlp_metrics_buf = Vec::new();
     for m in metrics {
         let mut metric = Vec::new();
@@ -117,13 +117,13 @@ pub fn build_request(
 
         match m.metric_type {
             MetricType::Gauge => {
-                // Gauge message (field 5 of MetricConfig)
+                // Gauge message (field 5 of Metric)
                 let mut gauge = Vec::new();
                 encode_ld(1, &dp, &mut gauge); // data_points
                 encode_ld(5, &gauge, &mut metric);
             }
             MetricType::Counter => {
-                // Sum message (field 7 of MetricConfig)
+                // Sum message (field 7 of Metric)
                 let mut sum = Vec::new();
                 encode_ld(1, &dp, &mut sum); // data_points
                 encode_varint_field(2, 2, &mut sum); // AGGREGATION_TEMPORALITY_CUMULATIVE = 2
@@ -201,7 +201,7 @@ pub fn build_request_with_internal(
     request
 }
 
-/// Encode a single MetricConfig message.
+/// Encode a single Metric message.
 fn encode_single_metric(m: &MetricValue, process_start: SystemTime) -> Vec<u8> {
     let mut metric = Vec::new();
     encode_ld(1, m.name.as_bytes(), &mut metric);

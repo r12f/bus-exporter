@@ -421,7 +421,7 @@ collectors:
     assert!(result.unwrap_err().to_string().contains("slave_id"));
 }
 
-// ── MetricConfig reading tests ────────────────────────────────────────────
+// ── Metric reading tests ────────────────────────────────────────────
 
 #[tokio::test]
 async fn test_read_i3c_metric_u8() {

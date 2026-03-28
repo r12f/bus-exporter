@@ -399,8 +399,8 @@ async fn test_batch_read_fallback_on_failure() {
 fn test_coalesce_splits_at_125_register_limit() {
     // Two metrics that together span more than 125 registers should be split
     // into separate ranges even though the gap is within threshold.
-    // MetricConfig A: addr 0, count 1 (U16)
-    // MetricConfig B: addr 124, count 2 (U32) => end = 126, merged_count = 126 > 125
+    // Metric A: addr 0, count 1 (U16)
+    // Metric B: addr 124, count 2 (U32) => end = 126, merged_count = 126 > 125
     let m1 = make_metric("a", 0, DataType::U16, RegisterType::Holding);
     let m2 = make_metric("b", 124, DataType::U32, RegisterType::Holding);
     let items = vec![

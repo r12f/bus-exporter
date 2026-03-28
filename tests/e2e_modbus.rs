@@ -342,7 +342,7 @@ async fn e2e_modbus_tcp_prometheus() {
 
     // 7. Assertions
 
-    // -- MetricConfig existence --
+    // -- Metric existence --
     let metric_names = [
         "bus_voltage_phase_a_V",
         "bus_total_energy_kWh",

@@ -13,7 +13,7 @@ pub enum MetricType {
 /// A single metric value with metadata.
 #[derive(Debug, Clone)]
 pub struct MetricValue {
-    /// MetricConfig name — required by OTLP/Prometheus exporters.
+    /// Metric name — required by OTLP/Prometheus exporters.
     pub name: String,
     pub value: f64,
     pub metric_type: MetricType,
@@ -28,7 +28,7 @@ pub struct MetricValue {
 /// Thread-safe store aggregating per-collector metric caches.
 ///
 /// Collectors call [`publish`] to atomically replace their cache snapshot.
-/// ExportersConfig call [`all_metrics`] for a read-only snapshot — they never
+/// Exporters call [`all_metrics`] for a read-only snapshot — they never
 /// trigger Modbus calls.
 #[derive(Debug, Clone)]
 pub struct MetricStore {

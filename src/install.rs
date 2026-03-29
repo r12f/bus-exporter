@@ -16,7 +16,7 @@ StandardError=journal
 SyslogIdentifier=bus-exporter
 
 [Install]
-WantedBy=multi-user.target
+WantedBy={wanted_by}
 "#;
 
 const SERVICE_NAME: &str = "bus-exporter.service";
@@ -88,9 +88,15 @@ pub fn run_install(
     let cfg = config_path.unwrap_or_else(|| PathBuf::from("/etc/bus-exporter/config.yaml"));
 
     // Generate unit file
+    let wanted_by = if user {
+        "default.target"
+    } else {
+        "multi-user.target"
+    };
     let unit_content = UNIT_TEMPLATE
         .replace("{bin_path}", &bin.display().to_string())
-        .replace("{config_path}", &cfg.display().to_string());
+        .replace("{config_path}", &cfg.display().to_string())
+        .replace("{wanted_by}", wanted_by);
 
     std::fs::write(&unit_path, &unit_content)?;
     eprintln!("Wrote {}", unit_path.display());

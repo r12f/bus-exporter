@@ -149,7 +149,7 @@ pub async fn read_i2c_metric(
     client: &I2cMetricReader,
     metric: &config::MetricConfig,
     bus_lock: &BusLock,
-) -> Result<f64> {
+) -> Result<(f64, f64)> {
     let data_type = decoder::map_data_type(metric.data_type);
     let byte_order = decoder::map_byte_order(metric.byte_order);
 
@@ -184,7 +184,6 @@ pub async fn read_i2c_metric(
     .context("spawn_blocking join error")??;
 
     decoder::decode_bytes(&bytes, data_type, byte_order, scale, offset)
-        .map(|(_raw, scaled)| scaled)
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
 

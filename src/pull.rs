@@ -7,6 +7,16 @@ use crate::config::{self, Config};
 use crate::reader::MetricReaderFactory;
 use crate::reader::MetricReaderFactoryImpl;
 
+fn protocol_str(protocol: &config::Protocol) -> &'static str {
+    match protocol {
+        config::Protocol::ModbusTcp { .. } => "modbus-tcp",
+        config::Protocol::ModbusRtu { .. } => "modbus-rtu",
+        config::Protocol::I2c { .. } => "i2c",
+        config::Protocol::Spi { .. } => "spi",
+        config::Protocol::I3c { .. } => "i3c",
+    }
+}
+
 pub async fn run_pull(
     config: &Config,
     collector_filter: Option<&str>,
@@ -51,9 +61,52 @@ pub async fn run_pull(
     let mut collectors_json = Vec::new();
 
     for collector in &filtered_collectors {
-        let mut reader = factory.create(collector)?;
+        let mut reader = match factory.create(collector) {
+            Ok(r) => r,
+            Err(e) => {
+                // Report all metrics as failed for this collector
+                let mut metrics_json = Vec::new();
+                for metric_cfg in &collector.metrics {
+                    total_metrics += 1;
+                    failed += 1;
+                    metrics_json.push(json!({
+                        "name": metric_cfg.name,
+                        "value": null,
+                        "raw_value": null,
+                        "error": format!("collector create failed: {e}")
+                    }));
+                }
+                let protocol_name = protocol_str(&collector.protocol);
+                collectors_json.push(json!({
+                    "name": collector.name,
+                    "protocol": protocol_name,
+                    "metrics": metrics_json
+                }));
+                continue;
+            }
+        };
         reader.set_metrics(collector.metrics.clone());
-        reader.connect().await?;
+        if let Err(e) = reader.connect().await {
+            // Report all metrics as failed for this collector
+            let mut metrics_json = Vec::new();
+            for metric_cfg in &collector.metrics {
+                total_metrics += 1;
+                failed += 1;
+                metrics_json.push(json!({
+                    "name": metric_cfg.name,
+                    "value": null,
+                    "raw_value": null,
+                    "error": format!("connect failed: {e}")
+                }));
+            }
+            let protocol_name = protocol_str(&collector.protocol);
+            collectors_json.push(json!({
+                "name": collector.name,
+                "protocol": protocol_name,
+                "metrics": metrics_json
+            }));
+            continue;
+        }
         let results = reader.read(&cancel).await;
         let _ = reader.disconnect().await;
 
@@ -61,18 +114,11 @@ pub async fn run_pull(
         for metric_cfg in &collector.metrics {
             total_metrics += 1;
             match results.metrics.get(&metric_cfg.name) {
-                Some(Ok(value)) => {
-                    // We have the scaled value from the reader. Compute raw by reversing scale/offset.
-                    // raw = (value - offset) / scale
-                    let raw_value = if metric_cfg.scale != 0.0 {
-                        (value - metric_cfg.offset) / metric_cfg.scale
-                    } else {
-                        *value
-                    };
+                Some(Ok((raw_value, scaled_value))) => {
                     successful += 1;
                     metrics_json.push(json!({
                         "name": metric_cfg.name,
-                        "value": value,
+                        "value": scaled_value,
                         "raw_value": raw_value,
                         "error": null
                     }));
@@ -98,13 +144,7 @@ pub async fn run_pull(
             }
         }
 
-        let protocol_name = match &collector.protocol {
-            config::Protocol::ModbusTcp { .. } => "modbus-tcp",
-            config::Protocol::ModbusRtu { .. } => "modbus-rtu",
-            config::Protocol::I2c { .. } => "i2c",
-            config::Protocol::Spi { .. } => "spi",
-            config::Protocol::I3c { .. } => "i3c",
-        };
+        let protocol_name = protocol_str(&collector.protocol);
 
         collectors_json.push(json!({
             "name": collector.name,

@@ -89,9 +89,21 @@ async fn main() -> Result<()> {
         }
         Some(Command::Pull { collector, metric }) => {
             let config_path = find_config_file(cli.config.as_deref())
-                .context("failed to find configuration file")?;
-            let config =
-                Config::load_for_pull(&config_path).context("failed to load configuration")?;
+                .context("failed to find configuration file");
+            let config_path = match config_path {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Fatal: {e:#}");
+                    std::process::exit(2);
+                }
+            };
+            let config = match Config::load_for_pull(&config_path) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("Fatal: failed to load configuration: {e:#}");
+                    std::process::exit(2);
+                }
+            };
             let logging_cfg = map_logging_config(&config.logging);
             // For pull, force stderr output
             let pull_logging = LoggingConfig {
@@ -101,7 +113,13 @@ async fn main() -> Result<()> {
             init_logging(&pull_logging).context("failed to initialize logging")?;
 
             let exit_code =
-                pull::run_pull(&config, collector.as_deref(), metric.as_deref()).await?;
+                match pull::run_pull(&config, collector.as_deref(), metric.as_deref()).await {
+                    Ok(code) => code,
+                    Err(e) => {
+                        eprintln!("Fatal: {e:#}");
+                        std::process::exit(2);
+                    }
+                };
             std::process::exit(exit_code);
         }
         Some(Command::Run) | None => run_daemon(cli).await,

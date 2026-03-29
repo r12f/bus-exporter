@@ -94,7 +94,7 @@ impl<T: BusConnection + ModbusReader> ModbusClient for T {}
 pub(crate) async fn read_modbus_metric(
     client: &mut dyn ModbusClient,
     metric: &crate::config::MetricConfig,
-) -> Result<f64> {
+) -> Result<(f64, f64)> {
     use crate::config::RegisterType;
 
     let count = metric.data_type.register_count();
@@ -115,7 +115,6 @@ pub(crate) async fn read_modbus_metric(
                 metric.scale,
                 metric.offset,
             )
-            .map(|(_raw, scaled)| scaled)
             .map_err(|e| anyhow::anyhow!("{e}"))
         }
         RegisterType::Input => {
@@ -130,7 +129,6 @@ pub(crate) async fn read_modbus_metric(
                 metric.scale,
                 metric.offset,
             )
-            .map(|(_raw, scaled)| scaled)
             .map_err(|e| anyhow::anyhow!("{e}"))
         }
         RegisterType::Coil => {
@@ -142,7 +140,8 @@ pub(crate) async fn read_modbus_metric(
                 .first()
                 .ok_or_else(|| anyhow::anyhow!("empty coil response"))?;
             let raw = if *val { 1.0 } else { 0.0 };
-            Ok(raw * metric.scale + metric.offset)
+            let scaled = raw * metric.scale + metric.offset;
+            Ok((raw, scaled))
         }
         RegisterType::Discrete => {
             let bits = client
@@ -153,7 +152,8 @@ pub(crate) async fn read_modbus_metric(
                 .first()
                 .ok_or_else(|| anyhow::anyhow!("empty discrete input response"))?;
             let raw = if *val { 1.0 } else { 0.0 };
-            Ok(raw * metric.scale + metric.offset)
+            let scaled = raw * metric.scale + metric.offset;
+            Ok((raw, scaled))
         }
     }
 }

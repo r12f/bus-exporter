@@ -45,3 +45,4 @@ reqwest = { version = "0.12", features = ["rustls-tls"], default-features = fals
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
 log = "0.4"
+serialport = "4"

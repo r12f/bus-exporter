@@ -95,7 +95,6 @@ bus-exporter/
 │           ├── mod.rs
 │           └── mod_tests.rs
 ├── tests/
-│   ├── integration_test.rs
 │   ├── e2e_modbus.rs
 │   └── e2e_i3c.rs
 └── assets/

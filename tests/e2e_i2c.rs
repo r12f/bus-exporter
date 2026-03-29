@@ -26,7 +26,7 @@ fn i2c_fixtures() -> TestFixtures {
                 name: "voltage",
                 description: "I2C voltage sensor",
                 metric_type: "gauge",
-                register_type: "holding",
+                register_type: "",
                 address: 0x00,
                 data_type: "u16",
                 byte_order: "big_endian",
@@ -41,7 +41,7 @@ fn i2c_fixtures() -> TestFixtures {
                 name: "temperature",
                 description: "I2C temperature sensor",
                 metric_type: "gauge",
-                register_type: "holding",
+                register_type: "",
                 address: 0x10,
                 data_type: "u16",
                 byte_order: "big_endian",
@@ -109,41 +109,32 @@ fn find_stub_bus() -> Option<PathBuf> {
     None
 }
 
-/// Write a byte value to a register on the i2c-stub device using i2cset.
-/// Uses SMBus byte write: i2cset -y <bus> <addr> <reg> <value>
-fn i2c_write_byte(bus_num: &str, register: u8, value: u8) -> bool {
+/// Write a u16 word value to a register on the i2c-stub device using i2cset word mode.
+/// Uses SMBus word write: i2cset -y <bus> <addr> <reg> <value> w
+fn i2c_write_word(bus_num: &str, register: u8, value: u16) -> bool {
     let status = Command::new("i2cset")
         .args([
             "-y",
             bus_num,
             &format!("0x{:02x}", I2C_STUB_CHIP_ADDR),
             &format!("0x{:02x}", register),
-            &format!("0x{:02x}", value),
+            &format!("0x{:04x}", value),
+            "w",
         ])
         .status();
     matches!(status, Ok(s) if s.success())
 }
 
 /// Write fixture values to the i2c-stub device.
-/// For u16 values, writes high byte at register and low byte at register+1.
+/// Uses SMBus word writes so that smbus_read_word_data can read them back.
 fn write_fixtures_to_stub(bus_num: &str, fixtures: &TestFixtures) -> bool {
     for m in &fixtures.metrics {
         for (i, &raw_word) in m.raw_registers.iter().enumerate() {
-            let base_reg = m.address as u8 + (i as u8 * 2);
-            let hi = (raw_word >> 8) as u8;
-            let lo = (raw_word & 0xFF) as u8;
-            if !i2c_write_byte(bus_num, base_reg, hi) {
+            let reg = m.address as u8 + (i as u8 * 2);
+            if !i2c_write_word(bus_num, reg, raw_word) {
                 eprintln!(
-                    "Failed to write hi byte for metric '{}' at register 0x{:02x}",
-                    m.name, base_reg
-                );
-                return false;
-            }
-            if !i2c_write_byte(bus_num, base_reg + 1, lo) {
-                eprintln!(
-                    "Failed to write lo byte for metric '{}' at register 0x{:02x}",
-                    m.name,
-                    base_reg + 1
+                    "Failed to write word for metric '{}' at register 0x{:02x}",
+                    m.name, reg
                 );
                 return false;
             }

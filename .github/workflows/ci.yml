@@ -39,7 +39,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update && sudo apt-get install -y libudev-dev
       - name: Run native E2E tests
-        run: cargo test --test e2e_modbus -- --nocapture
+        run: cargo test --test 'e2e_*' -- --nocapture
 
   docker:
     runs-on: ubuntu-latest

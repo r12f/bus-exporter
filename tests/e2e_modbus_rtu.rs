@@ -352,27 +352,13 @@ async fn e2e_modbus_rtu_pull() {
     });
     guard.set_responder(responder_handle);
 
-    // 3. Generate config pointing at the other PTY
-    let tmp = tempfile::tempdir().unwrap();
+    // 3. Run shared e2e workflow
     let connection = ConnectionParams::ModbusRtu {
         device: pty_exporter.clone(),
         bps: 9600,
         slave_id: 1,
     };
-    let config_path =
-        common::generate_config(tmp.path(), "test_rtu_device", &connection, &fixtures);
-
-    // 4. Run pull
-    let result = common::run_pull(&config_path).await;
-    assert_eq!(
-        result.exit_code,
-        Some(0),
-        "pull failed:\nstderr: {}",
-        result.stderr
-    );
-
-    // 5. Validate results
-    common::validate(&result, &fixtures);
+    common::run_e2e_workflow("test_rtu_device", &connection, &fixtures).await;
 
     // Cleanup handled by TestGuard's Drop impl
     drop(guard);

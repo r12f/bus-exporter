@@ -223,6 +223,29 @@ collectors:
     config_path
 }
 
+// ── E2E workflow ──────────────────────────────────────────────────────
+
+/// Run the common e2e workflow: generate config → pull → assert success → validate.
+///
+/// Each test sets up its own mock device and calls this with the resulting
+/// connection params. Cleanup is the caller's responsibility.
+pub async fn run_e2e_workflow(
+    collector_name: &str,
+    connection: &ConnectionParams,
+    fixtures: &TestFixtures,
+) {
+    let tmp = tempfile::tempdir().unwrap();
+    let config_path = generate_config(tmp.path(), collector_name, connection, fixtures);
+    let result = run_pull(&config_path).await;
+    assert_eq!(
+        result.exit_code,
+        Some(0),
+        "pull failed:\nstderr: {}",
+        result.stderr
+    );
+    validate(&result, fixtures);
+}
+
 // ── Pull runner ───────────────────────────────────────────────────────
 
 /// Output from a `bus-exporter pull` invocation.

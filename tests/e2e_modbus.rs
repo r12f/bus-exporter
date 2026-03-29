@@ -142,25 +142,12 @@ async fn e2e_modbus_tcp_pull() {
     // 1. Start simulator populated from shared fixtures
     let (sim_addr, sim_handle) = start_simulator(&fixtures).await;
 
-    // 2. Generate config using shared harness
-    let tmp = tempfile::tempdir().unwrap();
+    // 2. Run shared e2e workflow
     let connection = ConnectionParams::ModbusTcp {
         endpoint: format!("{}:{}", sim_addr.ip(), sim_addr.port()),
         slave_id: 1,
     };
-    let config_path = common::generate_config(tmp.path(), "test_device", &connection, &fixtures);
-
-    // 3. Run pull
-    let result = common::run_pull(&config_path).await;
-    assert_eq!(
-        result.exit_code,
-        Some(0),
-        "pull failed:\nstderr: {}",
-        result.stderr
-    );
-
-    // 4. Validate results
-    common::validate(&result, &fixtures);
+    common::run_e2e_workflow("test_device", &connection, &fixtures).await;
 
     // Cleanup
     sim_handle.abort();

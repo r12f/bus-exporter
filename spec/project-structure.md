@@ -96,7 +96,6 @@ bus-exporter/
 │           └── mod_tests.rs
 ├── tests/
 │   ├── e2e_modbus.rs
-│   └── e2e_i3c.rs
 └── assets/
     ├── logo.svg
     └── logo.png

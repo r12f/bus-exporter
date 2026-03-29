@@ -158,6 +158,11 @@ pub enum ConnectionParams {
         bps: u32,
         slave_id: u8,
     },
+    #[allow(dead_code)]
+    I2c {
+        bus: String,
+        address: u8,
+    },
 }
 
 /// Generate a bus-exporter YAML config and write it to `dir/config.yaml`.
@@ -186,6 +191,13 @@ pub fn generate_config(
                 device, bps
             ),
             *slave_id,
+        ),
+        ConnectionParams::I2c { bus, address } => (
+            format!(
+                "    protocol:\n      type: i2c\n      bus: \"{}\"\n      address: {}",
+                bus, address
+            ),
+            0,
         ),
     };
 

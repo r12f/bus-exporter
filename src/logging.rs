@@ -24,10 +24,10 @@ pub fn map_logging_config(cfg: &config::LoggingConfig) -> LoggingConfig {
     let output = match cfg.output {
         config::LogOutput::Stdout => LogOutput::Stdout,
         config::LogOutput::Stderr => LogOutput::Stderr,
-        // Syslog output is not yet implemented as a native syslog transport.
-        // We map it to structured JSON as an interim solution, because JSON
-        // is the closest machine-readable format and is easy to forward into
-        // syslog-compatible collectors (e.g. Vector, Fluentd, journald).
+        config::LogOutput::Json => LogOutput::Json,
+        // Syslog maps to JSON output for backward compatibility.
+        // Native syslog is not planned; use OTLP exporter for
+        // distributed log/trace collection.
         config::LogOutput::Syslog => LogOutput::Json,
     };
 
@@ -41,7 +41,6 @@ pub enum LogOutput {
     Stdout,
     Stderr,
     /// Structured JSON output to stderr.
-    /// Real syslog support (via the `syslog` crate) is planned for a future release.
     Json,
 }
 

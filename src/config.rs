@@ -123,6 +123,8 @@ pub enum LogLevel {
 pub enum LogOutput {
     Stdout,
     Stderr,
+    Json,
+    /// Backward-compatible alias for `Json`. Native syslog is not planned.
     Syslog,
 }
 
@@ -165,7 +167,7 @@ fn default_log_level() -> LogLevel {
     LogLevel::Info
 }
 fn default_log_output() -> LogOutput {
-    LogOutput::Syslog
+    LogOutput::Json
 }
 fn default_syslog_facility() -> SyslogFacility {
     SyslogFacility::Daemon

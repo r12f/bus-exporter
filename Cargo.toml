@@ -26,6 +26,8 @@ clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 indexmap = { version = "2", features = ["serde"] }
 dashmap = "6"
+chrono = "0.4"
+humantime = "2"
 humantime-serde = "1"
 async-trait = "0.1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }

@@ -33,6 +33,18 @@ pub enum Command {
         #[arg(long)]
         metric: Option<String>,
     },
+    /// Continuous metric tracing — pull in a loop, print to stdout
+    Trace {
+        /// Filter collectors by name (regex, partial match)
+        #[arg(long)]
+        collector: Option<String>,
+        /// Filter metrics by name (regex, partial match)
+        #[arg(long)]
+        metric: Option<String>,
+        /// Override polling interval (e.g. "1s", "500ms")
+        #[arg(long)]
+        interval: Option<String>,
+    },
     /// Install/uninstall as a systemd service
     Install {
         /// Install as user service (systemctl --user)

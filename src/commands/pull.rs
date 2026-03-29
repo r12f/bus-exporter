@@ -1,14 +1,15 @@
 use anyhow::{bail, Context, Result};
-use regex::Regex;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use std::path::Path;
 
-use crate::config::{self, find_config_file, Config};
+use crate::config::{find_config_file, Config};
 use crate::logging::{init_logging, map_logging_config, LogOutput, LoggingConfig};
 use crate::reader::MetricReaderFactory;
 use crate::reader::MetricReaderFactoryImpl;
+
+use super::filter_collectors;
 
 /// Entry point for the `pull` subcommand.
 ///
@@ -57,32 +58,8 @@ pub async fn run_pull(
     collector_filter: Option<&str>,
     metric_filter: Option<&str>,
 ) -> Result<i32> {
-    // Compile regexes
-    let collector_re = collector_filter
-        .map(Regex::new)
-        .transpose()
-        .map_err(|e| anyhow::anyhow!("invalid --collector regex: {e}"))?;
-    let metric_re = metric_filter
-        .map(Regex::new)
-        .transpose()
-        .map_err(|e| anyhow::anyhow!("invalid --metric regex: {e}"))?;
-
-    // Filter collectors
-    let mut filtered_collectors: Vec<config::CollectorConfig> = Vec::new();
-    for c in &config.collectors {
-        if let Some(ref re) = collector_re {
-            if !re.is_match(&c.name) {
-                continue;
-            }
-        }
-        let mut cc = c.clone();
-        if let Some(ref re) = metric_re {
-            cc.metrics.retain(|m| re.is_match(&m.name));
-        }
-        if !cc.metrics.is_empty() {
-            filtered_collectors.push(cc);
-        }
-    }
+    let filtered_collectors =
+        filter_collectors(&config.collectors, collector_filter, metric_filter)?;
 
     if filtered_collectors.is_empty() {
         bail!("no collectors/metrics match the given filters");

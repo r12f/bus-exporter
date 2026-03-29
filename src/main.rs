@@ -19,6 +19,19 @@ async fn main() -> Result<()> {
             bin,
             uninstall,
         }) => commands::install::run_install(user, config, bin, uninstall),
+        Some(Command::Trace {
+            collector,
+            metric,
+            interval,
+        }) => {
+            commands::trace::trace_command(
+                cli.config.as_deref().map(Path::new),
+                collector.as_deref(),
+                metric.as_deref(),
+                interval.as_deref(),
+            )
+            .await
+        }
         Some(Command::Pull { collector, metric }) => {
             commands::pull::pull_command(
                 cli.config.as_deref().map(Path::new),

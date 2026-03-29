@@ -97,9 +97,7 @@ impl Service for SimulatorService {
             Request::ReadInputRegisters(addr, count) => {
                 Response::ReadInputRegisters(self.read_input(addr, count))
             }
-            Request::ReadCoils(addr, count) => {
-                Response::ReadCoils(self.read_coils(addr, count))
-            }
+            Request::ReadCoils(addr, count) => Response::ReadCoils(self.read_coils(addr, count)),
             Request::ReadDiscreteInputs(_, count) => {
                 Response::ReadDiscreteInputs(vec![false; count as usize])
             }
@@ -153,8 +151,13 @@ async fn e2e_modbus_tcp_pull() {
     let config_path = common::generate_config(tmp.path(), "test_device", &connection, &fixtures);
 
     // 3. Run pull
-    let result = common::run_pull(&config_path);
-    assert_eq!(result.exit_code, Some(0), "pull failed:\nstderr: {}", result.stderr);
+    let result = common::run_pull(&config_path).await;
+    assert_eq!(
+        result.exit_code,
+        Some(0),
+        "pull failed:\nstderr: {}",
+        result.stderr
+    );
 
     // 4. Validate results
     common::validate(&result, &fixtures);

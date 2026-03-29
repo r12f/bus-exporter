@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use tokio::process::Command;
 
 // ── Test fixture definitions ──────────────────────────────────────────
 
@@ -169,28 +169,24 @@ pub fn generate_config(
     fixtures: &TestFixtures,
 ) -> PathBuf {
     let (protocol_yaml, slave_id) = match connection {
-        ConnectionParams::ModbusTcp { endpoint, slave_id } => {
-            (
-                format!(
-                    "    protocol:\n      type: modbus-tcp\n      endpoint: \"{}\"",
-                    endpoint
-                ),
-                *slave_id,
-            )
-        }
+        ConnectionParams::ModbusTcp { endpoint, slave_id } => (
+            format!(
+                "    protocol:\n      type: modbus-tcp\n      endpoint: \"{}\"",
+                endpoint
+            ),
+            *slave_id,
+        ),
         ConnectionParams::ModbusRtu {
             device,
             bps,
             slave_id,
-        } => {
-            (
-                format!(
-                    "    protocol:\n      type: modbus-rtu\n      device: \"{}\"\n      bps: {}",
-                    device, bps
-                ),
-                *slave_id,
-            )
-        }
+        } => (
+            format!(
+                "    protocol:\n      type: modbus-rtu\n      device: \"{}\"\n      bps: {}",
+                device, bps
+            ),
+            *slave_id,
+        ),
     };
 
     let mut metrics_yaml = String::new();
@@ -257,11 +253,12 @@ fn find_binary() -> PathBuf {
 }
 
 /// Run `bus-exporter pull -c <config>` and parse the JSON output.
-pub fn run_pull(config_path: &Path) -> PullResult {
+pub async fn run_pull(config_path: &Path) -> PullResult {
     let binary = find_binary();
     let output = Command::new(&binary)
         .args(["pull", "-c", config_path.to_str().unwrap()])
         .output()
+        .await
         .unwrap_or_else(|e| panic!("failed to run bus-exporter binary at {:?}: {}", binary, e));
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();

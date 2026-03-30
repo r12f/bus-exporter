@@ -188,9 +188,7 @@ async fn e2e_otlp_export() {
         } else {
             String::from("<stderr not captured>")
         };
-        panic!(
-            "otel-collector exited prematurely with status {status}\nstderr:\n{stderr_output}"
-        );
+        panic!("otel-collector exited prematurely with status {status}\nstderr:\n{stderr_output}");
     }
 
     // 4. Start bus-exporter run
@@ -215,9 +213,7 @@ async fn e2e_otlp_export() {
         } else {
             String::from("<stderr not captured>")
         };
-        panic!(
-            "bus-exporter exited prematurely with status {status}\nstderr:\n{stderr_output}"
-        );
+        panic!("bus-exporter exited prematurely with status {status}\nstderr:\n{stderr_output}");
     }
 
     // 5. Wait for metrics to flow through the pipeline, then scrape Prometheus

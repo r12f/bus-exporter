@@ -13,6 +13,16 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Some(Command::ShowConfig {
+            collector,
+            metric,
+            format,
+        }) => commands::show_config::show_config_command(
+            cli.config.as_deref().map(Path::new),
+            collector.as_deref(),
+            metric.as_deref(),
+            &format,
+        ),
         Some(Command::Install {
             user,
             config,

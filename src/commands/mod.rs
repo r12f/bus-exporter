@@ -1,6 +1,7 @@
 pub mod install;
 pub mod pull;
 pub mod run;
+pub mod show_config;
 pub mod watch;
 
 use anyhow::Result;

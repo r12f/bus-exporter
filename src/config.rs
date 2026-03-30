@@ -3,7 +3,7 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 use indexmap::IndexMap;
 use serde::de;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -46,6 +46,18 @@ pub enum Command {
         #[arg(long)]
         interval: Option<String>,
     },
+    /// Show resolved configuration
+    ShowConfig {
+        /// Filter collectors by name (regex, partial match)
+        #[arg(long)]
+        collector: Option<String>,
+        /// Filter metrics by name (regex, partial match)
+        #[arg(long)]
+        metric: Option<String>,
+        /// Output format: yaml (default) or json
+        #[arg(long, default_value = "yaml")]
+        format: OutputFormat,
+    },
     /// Install/uninstall as a systemd service
     Install {
         /// Install as user service (systemctl --user)
@@ -61,6 +73,13 @@ pub enum Command {
         #[arg(long)]
         uninstall: bool,
     },
+}
+
+#[derive(clap::ValueEnum, Debug, Clone, Default)]
+pub enum OutputFormat {
+    #[default]
+    Yaml,
+    Json,
 }
 
 /// Default search paths for the config file (in priority order).
@@ -98,7 +117,7 @@ pub fn find_config_file(explicit: Option<&Path>) -> Result<PathBuf> {
     bail!("no config file found; searched:\n{}", searched.join("\n"));
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default)]
@@ -109,7 +128,7 @@ pub struct Config {
     pub collectors: Vec<CollectorConfig>,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Trace,
@@ -119,7 +138,7 @@ pub enum LogLevel {
     Error,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum LogOutput {
     Stdout,
@@ -129,7 +148,7 @@ pub enum LogOutput {
     Syslog,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum SyslogFacility {
     Daemon,
@@ -143,7 +162,7 @@ pub enum SyslogFacility {
     Local7,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
@@ -174,7 +193,7 @@ fn default_syslog_facility() -> SyslogFacility {
     SyslogFacility::Daemon
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ExportersConfig {
     #[serde(default)]
@@ -185,7 +204,7 @@ pub struct ExportersConfig {
     pub mqtt: Option<MqttExporterConfig>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct OtlpExporterConfig {
     #[serde(default)]
@@ -208,7 +227,7 @@ fn default_otlp_timeout() -> Duration {
     Duration::from_secs(10)
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct PrometheusExporterConfig {
     #[serde(default)]
@@ -226,7 +245,7 @@ fn default_prom_path() -> String {
     "/metrics".to_string()
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MqttExporterConfig {
     #[serde(default)]
@@ -247,14 +266,24 @@ pub struct MqttExporterConfig {
     pub timeout: Duration,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MqttAuthConfig {
     pub username: String,
+    #[serde(serialize_with = "serialize_redacted")]
     pub password: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Custom serializer that emits `"***"` instead of the actual value.
+/// Use on any field containing passwords, tokens, or secrets.
+pub fn serialize_redacted<S: serde::Serializer>(
+    _value: &str,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str("***")
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MqttTlsConfig {
     pub ca_cert: Option<String>,
@@ -281,7 +310,8 @@ fn default_mqtt_timeout() -> Duration {
 }
 
 /// A single byte or list of bytes, used for I2C/I3C write step values.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
 pub enum ByteValue {
     Single(u8),
     Multi(Vec<u8>),
@@ -335,7 +365,7 @@ impl<'de> Deserialize<'de> for ByteValue {
 }
 
 /// A write step for I2C/I3C or SPI protocols.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct WriteStep {
     /// Register address (I2C/I3C only).
@@ -352,7 +382,7 @@ pub struct WriteStep {
     pub delay: Option<Duration>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct CollectorConfig {
     pub name: String,
@@ -367,7 +397,7 @@ pub struct CollectorConfig {
     pub pre_poll: Vec<WriteStep>,
     #[serde(default)]
     pub labels: HashMap<String, String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub metrics_files: Option<Vec<String>>,
     #[serde(default)]
     pub metrics: Vec<MetricConfig>,
@@ -377,7 +407,7 @@ fn default_polling_interval() -> Duration {
     Duration::from_secs(10)
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(tag = "type")]
 pub enum Protocol {
     #[serde(rename = "modbus-tcp")]
@@ -452,7 +482,7 @@ fn default_stop_bits() -> u8 {
     1
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Parity {
     #[default]
@@ -461,7 +491,7 @@ pub enum Parity {
     Odd,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct MetricConfig {
     pub name: String,
@@ -498,14 +528,14 @@ fn default_scale() -> f64 {
     1.0
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum MetricType {
     Counter,
     Gauge,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum RegisterType {
     Holding,
@@ -514,7 +544,7 @@ pub enum RegisterType {
     Discrete,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum DataType {
     U8,
@@ -550,7 +580,7 @@ impl DataType {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[allow(clippy::enum_variant_names)]
 pub enum ByteOrder {
@@ -561,7 +591,7 @@ pub enum ByteOrder {
 }
 
 /// Metrics file for reusable metric definitions.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct MetricsFileConfig {
     #[serde(default)]
@@ -570,7 +600,7 @@ pub struct MetricsFileConfig {
 }
 
 /// Default values applied to all metrics in a metrics file.
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 #[serde(deny_unknown_fields)]
 pub struct MetricDefaultsConfig {
     #[serde(default)]
@@ -587,7 +617,7 @@ pub struct MetricDefaultsConfig {
 
 /// A metric with all optional fields, used for metrics file parsing.
 /// Required fields are filled from defaults or must be present.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct RawMetricConfig {
     pub name: String,

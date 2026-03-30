@@ -2,7 +2,7 @@
 
 ## Overview
 
-`bus-exporter` supports four modes of operation via subcommands:
+`bus-exporter` supports five modes of operation via subcommands:
 
 - **`run`** (default) — Start as a daemon, continuously polling collectors and exporting metrics.
 - **`pull`** — Single-shot read: connect, read metrics once, print JSON, exit.
@@ -218,33 +218,46 @@ Options:
 ### Behavior
 
 1. Load config file (same search path as `run`).
-2. Resolve `metrics_files` — merge into inline `metrics` per collector.
+2. Resolve `metrics_files` — merge into inline `metrics` per collector. If a `metrics_files` path does not exist or is unreadable, print an error to stderr and exit 1.
 3. Apply filters (same regex semantics as `pull`/`watch` — reuse shared `filter_collectors()`):
    - `--collector <REGEX>` — keep only matching collectors.
    - `--metric <REGEX>` — keep only matching metrics within displayed collectors. Collectors with zero matching metrics are removed.
-4. If filters match nothing, print warning to stderr: `"warning: no collectors matched the filter"` and output an empty config.
+   - Invalid regex → print error to stderr and exit 1 (same as `pull`/`watch`).
+4. If filters match nothing, print warning to stderr: `"warning: no collectors matched the filter"` and output the full config with `collectors: []`. **Note:** This differs from `pull`/`watch` which exit with error code 1 when filters match nothing. `show-config` exits 0 because it is a diagnostic tool — showing an empty result is still a valid answer (e.g., confirming a collector name doesn't exist).
 5. Serialize the **full** resolved `Config` to stdout (including `logging`, `exporters`, `global_labels`, and filtered `collectors`).
-6. `metrics_files` field is omitted from output (resolved into `metrics`).
+6. `metrics_files` field is omitted from output (already resolved into `metrics`). Use `#[serde(skip_serializing)]` on the `metrics_files` field.
 
 ### Validation
 
-- Validation is **relaxed** compared to `run`. The command should parse and resolve the config but skip exporter-specific validation (e.g., missing exporter endpoints). This allows users to inspect partially complete configs.
-- If the config file cannot be parsed at all (invalid YAML, missing required fields), print errors to stderr and exit 1.
-- Validation warnings (e.g., no exporters configured) may be printed to stderr but do not block output.
+- Validation is **relaxed** compared to `run`. The command parses and resolves the config but skips exporter-specific validation (e.g., missing exporter endpoints, no exporters configured). This allows users to inspect partially complete or work-in-progress configs.
+- If the config file cannot be found, is not valid YAML, or has missing required fields (e.g., `collectors` not present), print errors to stderr and exit 1.
+- Use a dedicated `Config::load_for_display()` or reuse `Config::load_for_pull()` which already skips exporter validation.
 
 ### Output Formats
 
-- **YAML** (default, `--format yaml`) — `serde_yaml::to_string`. Output ends with a trailing newline.
-- **JSON** (`--format json`) — `serde_json::to_string_pretty`. Output ends with a trailing newline.
+- **YAML** (default, `--format yaml`) — serialized via a YAML serializer. Output ends with a trailing newline.
+- **JSON** (`--format json`) — serialized via `serde_json::to_string_pretty`. Output ends with a trailing newline.
 
-Both formats must produce consistent trailing newline behavior.
+Both formats must produce consistent trailing newline behavior. Use `println!` for both paths to ensure this.
+
+### `OutputFormat` Enum
+
+```rust
+#[derive(Clone, ValueEnum)]
+enum OutputFormat {
+    Yaml,
+    Json,
+}
+```
 
 ### Credential Redaction
 
-Sensitive fields are **redacted** in the output to prevent accidental credential leaks:
+Sensitive fields are **redacted** in the output using a custom serializer that emits `"***"` instead of the actual value. This approach is preferred over `#[serde(skip_serializing)]` because it makes the presence of the credential field visible (users can see that auth *is* configured, just redacted).
 
-- `exporters.mqtt.auth.password` → serialized as `"***"` (or skipped entirely via `#[serde(skip_serializing)]`)
-- Any future credential fields must follow the same pattern.
+Fields that must be redacted:
+- `exporters.mqtt.auth.password`
+
+**General rule:** Any field containing passwords, tokens, or secrets must use the same `serialize_redacted` custom serializer. When adding new credential fields in the future, apply `#[serde(serialize_with = "serialize_redacted")]`.
 
 Users running `show-config` may pipe output to logs, paste in issues, or share with teammates — plaintext credentials must never appear.
 
@@ -263,6 +276,12 @@ exporters:
   prometheus:
     enabled: true
     listen: "0.0.0.0:9091"
+  mqtt:
+    enabled: true
+    broker: "mqtt://localhost:1883"
+    auth:
+      username: "exporter"
+      password: "***"
 
 collectors:
   - name: "bme680"
@@ -300,7 +319,7 @@ collectors:
 | Code | Meaning |
 |------|---------|
 | 0 | Config parsed and displayed successfully (even if filters matched nothing) |
-| 1 | Config file cannot be parsed or found |
+| 1 | Config file not found, unparseable YAML, unresolvable `metrics_files` paths, or invalid regex |
 
 ## `run` Subcommand
 

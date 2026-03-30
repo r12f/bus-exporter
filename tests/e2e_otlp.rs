@@ -61,6 +61,7 @@ fn generate_otelcol_config(
     dir: &std::path::Path,
     otlp_port: u16,
     prom_port: u16,
+    telemetry_port: u16,
 ) -> std::path::PathBuf {
     let config = format!(
         r#"receivers:
@@ -74,6 +75,9 @@ exporters:
     endpoint: "127.0.0.1:{prom_port}"
 
 service:
+  telemetry:
+    metrics:
+      address: "127.0.0.1:{telemetry_port}"
   pipelines:
     metrics:
       receivers: [otlp]
@@ -159,9 +163,10 @@ async fn e2e_otlp_export() {
     // 2. Allocate ports and generate configs
     let otlp_port = free_port();
     let prom_port = free_port();
+    let telemetry_port = free_port();
     let tmp = tempfile::tempdir().unwrap();
 
-    let otelcol_config = generate_otelcol_config(tmp.path(), otlp_port, prom_port);
+    let otelcol_config = generate_otelcol_config(tmp.path(), otlp_port, prom_port, telemetry_port);
     let bus_config = generate_bus_exporter_config(tmp.path(), &sim_addr, otlp_port, &fixtures);
 
     // 3. Start otel-collector
@@ -242,6 +247,7 @@ async fn e2e_otlp_export() {
         };
 
         // Check if we see at least one of our expected metrics
+        // (names may be normalized by otel-collector, e.g. "voltage" → "voltage_volts")
         if body.contains("voltage") && body.contains("temperature") {
             eprintln!("attempt {attempt}: found metrics in Prometheus output");
             // Validate all expected metrics
@@ -265,27 +271,43 @@ async fn e2e_otlp_export() {
 }
 
 /// Parse Prometheus text format and validate expected metric values.
+///
+/// The otel-collector Prometheus exporter normalizes metric names per
+/// OpenMetrics conventions: units are appended as suffixes, counters get
+/// `_total`, and some unit names are expanded (e.g. "V" → "volts",
+/// "Hz" → "hertz").  The prefix `total_` may also be reordered to a
+/// `_total` suffix.  We search for non-comment lines whose metric name
+/// portion contains the fixture name (or its stem without `total_`).
 fn validate_prometheus_output(body: &str, fixtures: &TestFixtures) {
     let tolerance = 0.01;
 
     for fixture in &fixtures.metrics {
         let metric_name = fixture.name;
-        // Find lines that contain the metric name and have a value (not comments)
+        // The Prometheus exporter may reorder "total_X" → "X_..._total",
+        // so also try the name with the "total_" prefix stripped.
+        let alt_name = metric_name.strip_prefix("total_").unwrap_or(metric_name);
+
         let matching_lines: Vec<&str> = body
             .lines()
             .filter(|line| {
-                !line.starts_with('#')
-                    && (line.starts_with(metric_name)
-                        || line.starts_with(&format!("{metric_name}{{"))
-                        || line.starts_with(&format!("{metric_name}_total"))
-                        || line.starts_with(&format!("{metric_name}_total{{")))
+                if line.starts_with('#') || line.is_empty() {
+                    return false;
+                }
+                // Extract the metric-name portion (everything before '{' or ' ')
+                let name_part = line.find(['{', ' ']).map(|i| &line[..i]).unwrap_or(line);
+                // Skip internal bus_exporter metrics
+                if name_part.starts_with("bus_exporter_") {
+                    return false;
+                }
+                name_part.contains(metric_name) || name_part.contains(alt_name)
             })
             .collect();
 
         assert!(
             !matching_lines.is_empty(),
-            "metric '{}' not found in Prometheus output.\nBody:\n{}",
+            "metric '{}' (alt '{}') not found in Prometheus output.\nBody:\n{}",
             metric_name,
+            alt_name,
             body
         );
 

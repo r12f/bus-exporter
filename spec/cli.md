@@ -2,11 +2,12 @@
 
 ## Overview
 
-`bus-exporter` supports four modes of operation via subcommands:
+`bus-exporter` supports five modes of operation via subcommands:
 
 - **`run`** (default) — Start as a daemon, continuously polling collectors and exporting metrics.
 - **`pull`** — Single-shot read: connect, read metrics once, print JSON, exit.
 - **`watch`** — Continuous metric tracing: pull in a loop, print NDJSON to stdout.
+- **`show-config`** — Display the fully resolved configuration (merged metrics_files, with optional filters).
 - **`install`** — Install bus-exporter as a system service (systemd).
 
 When no subcommand is given, `run` is assumed (backward-compatible).
@@ -201,6 +202,125 @@ WantedBy=multi-user.target
 - If not on Linux or systemd is not available, print error and exit.
 - Future: support other init systems (OpenRC, launchd) via `--type` flag.
 
+## `show-config` Subcommand
+
+Display the fully resolved configuration after merging all `metrics_files` and inline `metrics`. Useful for debugging config issues when metrics are split across multiple files.
+
+```
+bus-exporter show-config [OPTIONS]
+
+Options:
+  --collector <REGEX>    Filter collectors by name (regex, partial match)
+  --metric <REGEX>       Filter metrics by name (regex, partial match)
+  --format <FORMAT>      Output format: yaml (default) or json
+```
+
+### Behavior
+
+1. Load config file (same search path as `run`).
+2. Resolve `metrics_files` — merge into inline `metrics` per collector. If a `metrics_files` path does not exist or is unreadable, print an error to stderr and exit 1.
+3. Apply filters (same regex semantics as `pull`/`watch` — reuse shared `filter_collectors()`):
+   - `--collector <REGEX>` — keep only matching collectors.
+   - `--metric <REGEX>` — keep only matching metrics within displayed collectors. Collectors with zero matching metrics are removed.
+   - Invalid regex → print error to stderr and exit 1 (same as `pull`/`watch`).
+4. If filters match nothing, print warning to stderr: `"warning: no collectors matched the filter"` and output the full config with `collectors: []`. **Note:** This differs from `pull`/`watch` which exit with error code 1 when filters match nothing. `show-config` exits 0 because it is a diagnostic tool — showing an empty result is still a valid answer (e.g., confirming a collector name doesn't exist).
+5. Serialize the **full** resolved `Config` to stdout (including `logging`, `exporters`, `global_labels`, and filtered `collectors`).
+6. `metrics_files` field is omitted from output (already resolved into `metrics`). Use `#[serde(skip_serializing)]` on the `metrics_files` field.
+
+### Validation
+
+- Validation is **relaxed** compared to `run`. The command parses and resolves the config but skips exporter-specific validation (e.g., missing exporter endpoints, no exporters configured). This allows users to inspect partially complete or work-in-progress configs.
+- If the config file cannot be found, is not valid YAML, or has missing required fields (e.g., `collectors` not present), print errors to stderr and exit 1.
+- Use a dedicated `Config::load_for_display()` or reuse `Config::load_for_pull()` which already skips exporter validation.
+
+### Output Formats
+
+- **YAML** (default, `--format yaml`) — serialized via a YAML serializer. Output ends with a trailing newline.
+- **JSON** (`--format json`) — serialized via `serde_json::to_string_pretty`. Output ends with a trailing newline.
+
+Both formats must produce consistent trailing newline behavior. Use `println!` for both paths to ensure this.
+
+### `OutputFormat` Enum
+
+```rust
+#[derive(Clone, ValueEnum)]
+enum OutputFormat {
+    Yaml,
+    Json,
+}
+```
+
+### Credential Redaction
+
+Sensitive fields are **redacted** in the output using a custom serializer that emits `"***"` instead of the actual value. This approach is preferred over `#[serde(skip_serializing)]` because it makes the presence of the credential field visible (users can see that auth *is* configured, just redacted).
+
+Fields that must be redacted:
+- `exporters.mqtt.auth.password`
+
+**General rule:** Any field containing passwords, tokens, or secrets must use the same `serialize_redacted` custom serializer. When adding new credential fields in the future, apply `#[serde(serialize_with = "serialize_redacted")]`.
+
+Users running `show-config` may pipe output to logs, paste in issues, or share with teammates — plaintext credentials must never appear.
+
+### Output Example
+
+```yaml
+logging:
+  level: "info"
+  output: "syslog"
+  syslog_facility: "daemon"
+
+global_labels:
+  host: "r12f-pi5"
+
+exporters:
+  prometheus:
+    enabled: true
+    listen: "0.0.0.0:9091"
+  mqtt:
+    enabled: true
+    broker: "mqtt://localhost:1883"
+    auth:
+      username: "exporter"
+      password: "***"
+
+collectors:
+  - name: "bme680"
+    protocol:
+      type: i2c
+      bus: "/dev/i2c-1"
+      address: 0x76
+    polling_interval: "5s"
+    init_writes:
+      - address: 0x72
+        value: 0x01
+    pre_poll:
+      - address: 0x74
+        value: 0x25
+      - delay: "50ms"
+    metrics:
+      - name: temperature
+        type: gauge
+        address: 0x22
+        data_type: u16
+        byte_order: big_endian
+        scale: 0.01
+        offset: -40.0
+        unit: "°C"
+```
+
+### Logging
+
+- Warnings and errors go to stderr.
+- Resolved config goes to stdout only.
+- This allows `bus-exporter show-config 2>/dev/null` for clean output.
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Config parsed and displayed successfully (even if filters matched nothing) |
+| 1 | Config file not found, unparseable YAML, unresolvable `metrics_files` paths, or invalid regex |
+
 ## `run` Subcommand
 
 Default behavior — start as daemon. No changes from current behavior.
@@ -250,6 +370,18 @@ enum Command {
         /// Override polling interval (e.g. "1s", "500ms")
         #[arg(long)]
         interval: Option<String>,
+    },
+    /// Display resolved configuration
+    ShowConfig {
+        /// Filter collectors by name (regex, partial match)
+        #[arg(long)]
+        collector: Option<String>,
+        /// Filter metrics by name (regex, partial match)
+        #[arg(long)]
+        metric: Option<String>,
+        /// Output format: yaml or json
+        #[arg(long, default_value = "yaml")]
+        format: OutputFormat,
     },
     /// Install as system service
     Install {

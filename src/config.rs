@@ -196,11 +196,11 @@ fn default_syslog_facility() -> SyslogFacility {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ExportersConfig {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub otlp: Option<OtlpExporterConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prometheus: Option<PrometheusExporterConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mqtt: Option<MqttExporterConfig>,
 }
 
@@ -209,7 +209,7 @@ pub struct ExportersConfig {
 pub struct OtlpExporterConfig {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
     #[serde(default = "default_otlp_timeout", with = "humantime_serde")]
     pub timeout: Duration,
@@ -250,11 +250,15 @@ fn default_prom_path() -> String {
 pub struct MqttExporterConfig {
     #[serde(default)]
     pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
     #[serde(default = "default_mqtt_topic_prefix")]
     pub topic_prefix: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auth: Option<MqttAuthConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tls: Option<MqttTlsConfig>,
     #[serde(default = "default_mqtt_qos")]
     pub qos: u8,
@@ -286,8 +290,11 @@ pub fn serialize_redacted<S: serde::Serializer>(
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MqttTlsConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ca_cert: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub client_cert: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
     #[serde(default)]
     pub insecure: bool,
@@ -369,16 +376,20 @@ impl<'de> Deserialize<'de> for ByteValue {
 #[serde(deny_unknown_fields)]
 pub struct WriteStep {
     /// Register address (I2C/I3C only).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub address: Option<u8>,
     /// Value byte(s) to write (I2C/I3C only).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<ByteValue>,
     /// Raw command bytes (SPI only).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<Vec<u8>>,
     /// Optional delay after this step.
-    #[serde(default, with = "humantime_serde")]
+    #[serde(
+        default,
+        with = "humantime_serde",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub delay: Option<Duration>,
 }
 
@@ -387,7 +398,7 @@ pub struct WriteStep {
 pub struct CollectorConfig {
     pub name: String,
     pub protocol: Protocol,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slave_id: Option<u8>,
     #[serde(default = "default_polling_interval", with = "humantime_serde")]
     pub polling_interval: Duration,
@@ -439,13 +450,13 @@ pub enum Protocol {
     #[serde(rename = "i3c")]
     I3c {
         bus: String,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         pid: Option<String>,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         address: Option<u8>,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         device_class: Option<String>,
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         instance: Option<u8>,
     },
 }
@@ -499,7 +510,9 @@ pub struct MetricConfig {
     pub description: String,
     #[serde(rename = "type")]
     pub metric_type: MetricType,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub register_type: Option<RegisterType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<u16>,
     pub data_type: DataType,
     #[serde(default = "default_byte_order")]
@@ -514,7 +527,7 @@ pub struct MetricConfig {
     #[serde(default)]
     pub command: Vec<u8>,
     /// SPI-only: total response bytes. Defaults to command length (full-duplex).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_length: Option<u16>,
     /// SPI-only: skip first N bytes of response before decoding.
     #[serde(default)]
@@ -594,7 +607,7 @@ pub enum ByteOrder {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct MetricsFileConfig {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub defaults: Option<MetricDefaultsConfig>,
     pub metrics: Vec<RawMetricConfig>,
 }
@@ -603,15 +616,21 @@ pub struct MetricsFileConfig {
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
 #[serde(deny_unknown_fields)]
 pub struct MetricDefaultsConfig {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(rename = "type")]
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub metric_type: Option<MetricType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub register_type: Option<RegisterType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data_type: Option<DataType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub byte_order: Option<ByteOrder>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
 }
 
@@ -621,19 +640,27 @@ pub struct MetricDefaultsConfig {
 #[serde(deny_unknown_fields)]
 pub struct RawMetricConfig {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(rename = "type")]
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub metric_type: Option<MetricType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub register_type: Option<RegisterType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data_type: Option<DataType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub byte_order: Option<ByteOrder>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
     #[serde(default)]
     pub command: Vec<u8>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_length: Option<u16>,
     #[serde(default)]
     pub response_offset: u16,

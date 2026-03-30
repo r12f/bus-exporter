@@ -60,6 +60,12 @@ collectors:
         byte_order: big_endian
         scale: 0.1
         unit: "V"
+  - name: sensor_i3c
+    protocol:
+      type: i3c
+      bus: "/dev/i3c-0"
+    polling_interval: "10s"
+    metrics: []
 "#
 }
 
@@ -160,4 +166,30 @@ fn test_invalid_regex_returns_error() {
     let cfg = config::Config::load_for_pull(path).unwrap();
     let result = crate::commands::filter_collectors(&cfg.collectors, Some("[invalid"), None);
     assert!(result.is_err());
+}
+
+#[test]
+fn test_no_null_fields_in_yaml_output() {
+    let f = write_temp_config(sample_config_yaml());
+    let path = f.path();
+    let cfg = config::Config::load_for_pull(path).unwrap();
+    let output = serde_yaml::to_string(&cfg).unwrap();
+    assert!(
+        !output.contains(": null"),
+        "YAML output should not contain null fields, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn test_no_null_fields_in_json_output() {
+    let f = write_temp_config(sample_config_yaml());
+    let path = f.path();
+    let cfg = config::Config::load_for_pull(path).unwrap();
+    let output = serde_json::to_string_pretty(&cfg).unwrap();
+    assert!(
+        !output.contains(": null"),
+        "JSON output should not contain null fields, got:\n{}",
+        output
+    );
 }

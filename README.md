@@ -14,6 +14,21 @@ A hardware bus metrics exporter that polls Modbus RTU/TCP, I2C, SPI, and I3C dev
 cargo install bus-exporter
 ```
 
+After installing, set up as a system service:
+
+```bash
+# Install as a systemd service (auto-starts on boot)
+sudo bus-exporter install
+
+# Or with a custom config path
+sudo bus-exporter install --config /path/to/config.yaml
+
+# Start the service
+sudo systemctl start bus-exporter
+```
+
+See the [CLI spec](spec/cli.md) for all subcommands including `pull`, `watch`, `show-config`, and `install --uninstall`.
+
 ### Docker
 
 ```bash

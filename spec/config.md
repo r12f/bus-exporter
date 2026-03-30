@@ -109,11 +109,13 @@ A collector must have at least one metric after merging `metrics_files` and `met
 
 `init_writes` and `pre_poll` allow register writes for device initialization and measurement triggering. **Only valid for I2C, SPI, and I3C collectors** — a validation error is raised if set on Modbus collectors.
 
+The write step schema differs by protocol — I2C/I3C use register addressing, while SPI uses raw byte commands.
+
 #### WriteStep (I2C / I3C)
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `address` | `u16` | Conditional | — | Register address to write (omit for delay-only steps) |
+| `address` | `u8` | Conditional | — | Register address to write, `0x00`–`0xFF` (omit for delay-only steps) |
 | `value` | `u8 \| list<u8>` | Conditional | — | Byte(s) to write. Required if `address` is set. Single integer or list for multi-byte. |
 | `delay` | `string` | No | — | Duration to wait after this step (e.g., `"50ms"`, `"1s"`) |
 
@@ -121,12 +123,12 @@ A step must have at least one of `address`+`value` or `delay`. A step with both 
 
 #### WriteStep (SPI)
 
+SPI has no register addressing — writes are raw byte sequences sent over the bus.
+
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `command` | `list<u8>` | Conditional | — | Bytes to transmit (omit for delay-only steps) |
 | `delay` | `string` | No | — | Duration to wait after this step |
-
-For SPI, `command` replaces `address`+`value` (SPI has no register addressing).
 
 #### Example: BME680 on I2C
 
